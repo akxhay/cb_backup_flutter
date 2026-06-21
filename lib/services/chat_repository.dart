@@ -71,13 +71,6 @@ class ChatRepository extends ChangeNotifier {
     return importZip(File(path));
   }
 
-  /// Imports using the sample zip bundled in the project (for demo).
-  /// Title will be parsed from the zip filename (e.g. "WhatsApp Chat - Rashmi Arya.zip").
-  Future<Chat?> importSample(String sampleZipPath) async {
-    final file = File(sampleZipPath);
-    if (!await file.exists()) return null;
-    return importZip(file);
-  }
 
   /// Core import: extract, parse, detect self, save metadata + messages.json, persist list.
   ///
@@ -159,6 +152,99 @@ class ChatRepository extends ChangeNotifier {
     return chat;
   }
 
+  /// Merge messages from a new zip into an existing chat (sorted by date, deduplicated).
+  /// Copies any new media files into the target chat's directory.
+  Future<void> mergeIntoChat(Chat target, File zipFile) async {
+    final temp = await Directory.systemTemp.createTemp('cbbackup_merge_');
+    try {
+      // Extract new zip to temp
+      final bytes = await zipFile.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+      for (final f in archive) {
+        final outPath = p.join(temp.path, f.name);
+        if (f.isFile) {
+          final outFile = File(outPath);
+          await outFile.parent.create(recursive: true);
+          await outFile.writeAsBytes(f.content as List<int>);
+        } else {
+          await Directory(outPath).create(recursive: true);
+        }
+      }
+
+      // Find _chat.txt in temp
+      String? txtPath;
+      await for (final entity in temp.list(recursive: true, followLinks: false)) {
+        if (entity is File && p.basename(entity.path).toLowerCase() == '_chat.txt') {
+          txtPath = entity.path;
+          break;
+        }
+      }
+      if (txtPath == null) {
+        throw Exception('No _chat.txt found in the zip for merge.');
+      }
+
+      final raw = await File(txtPath).readAsString();
+      final newMessages = parseChat(raw);
+      if (newMessages.isEmpty) return;
+
+      final existingMessages = await loadMessages(target);
+
+      // Combine, sort by date, deduplicate
+      var combined = [...existingMessages, ...newMessages];
+      combined.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      final seen = <String>{};
+      final merged = <ChatMessage>[];
+      for (final m in combined) {
+        final key = '${m.timestamp.toIso8601String()}|${m.sender}|${m.text}|${m.mediaPath ?? ''}';
+        if (seen.add(key)) {
+          merged.add(m);
+        }
+      }
+
+      // Copy media files from temp to target (preserve structure)
+      await for (final entity in temp.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          final base = p.basename(entity.path);
+          if (base.toLowerCase() == '_chat.txt') continue;
+          final rel = p.relative(entity.path, from: temp.path);
+          final destPath = p.join(target.extractedDir, rel);
+          final destFile = File(destPath);
+          await destFile.parent.create(recursive: true);
+          await entity.copy(destPath);
+        }
+      }
+
+      // Overwrite messages.json with merged
+      final msgFile = File(p.join(target.extractedDir, 'messages.json'));
+      await msgFile.writeAsString(jsonEncode(merged.map((m) => m.toJson()).toList()));
+
+      // Update the in-memory chat metadata
+      final idx = _chats.indexWhere((c) => c.id == target.id);
+      if (idx != -1) {
+        final old = _chats[idx];
+        final updated = Chat(
+          id: old.id,
+          title: old.title,
+          isGroup: old.isGroup,
+          participants: old.participants,
+          importDate: DateTime.now(),
+          extractedDir: old.extractedDir,
+          messageCount: merged.length,
+          lastMessagePreview: buildPreview(merged),
+        );
+        _chats[idx] = updated;
+      }
+
+      await _persist();
+      notifyListeners();
+    } finally {
+      if (await temp.exists()) {
+        await temp.delete(recursive: true);
+      }
+    }
+  }
+
   Future<List<ChatMessage>> loadMessages(Chat chat) async {
     final messagesFile = File(p.join(chat.extractedDir, 'messages.json'));
     if (!await messagesFile.exists()) {
@@ -170,8 +256,19 @@ class ChatRepository extends ChangeNotifier {
       }
       return [];
     }
-    final data = jsonDecode(await messagesFile.readAsString()) as List;
-    return data.map((j) => ChatMessage.fromJson(j as Map<String, dynamic>)).toList();
+    try {
+      final content = await messagesFile.readAsString();
+      final data = jsonDecode(content) as List;
+      return data.map((j) => ChatMessage.fromJson((j as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      // If json corrupt, fallback to txt
+      final txt = File(p.join(chat.extractedDir, '_chat.txt'));
+      if (await txt.exists()) {
+        final raw = await txt.readAsString();
+        return parseChat(raw);
+      }
+      return [];
+    }
   }
 
   Future<void> deleteChat(Chat chat) async {

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
@@ -37,13 +40,75 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _load() async {
-    final repo = context.read<ChatRepository>();
-    final msgs = await repo.loadMessages(widget.chat);
-    setState(() {
-      _allMessages = msgs;
-      _applyFilter();
-      _loading = false;
-    });
+    try {
+      final repo = context.read<ChatRepository>();
+      final msgs = await repo.loadMessages(widget.chat);
+      setState(() {
+        _allMessages = msgs;
+        _applyFilter();
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _allMessages = [];
+        _applyFilter();
+        _loading = false;
+      });
+    }
+  }
+
+  List<dynamic> get _displayItems {
+    if (_filtered.isEmpty) return [];
+    final List<dynamic> items = [];
+    DateTime? currentDate;
+
+    // Work on a copy sorted oldest -> newest
+    final sorted = List.of(_filtered)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    for (final msg in sorted) {
+      final msgDate = DateTime(
+        msg.timestamp.year,
+        msg.timestamp.month,
+        msg.timestamp.day,
+      );
+      if (currentDate == null || msgDate != currentDate) {
+        items.add(msgDate);
+        currentDate = msgDate;
+      }
+      items.add(msg);
+    }
+    return items;
+  }
+
+  String _formatDateHeader(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    if (date == today) return 'TODAY';
+    if (date == yesterday) return 'YESTERDAY';
+    return DateFormat('dd MMM yyyy').format(date);
+  }
+
+  Widget _buildDateSeparator(DateTime date) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white12
+              : Colors.black12,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          _formatDateHeader(date),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        ),
+      ),
+    );
   }
 
   void _applyFilter() {
@@ -155,50 +220,136 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final mediaMessages = _allMessages.where((m) => m.mediaPath != null).toList();
-    if (mediaMessages.isEmpty) {
+    final allMedia = _allMessages.where((m) => m.mediaPath != null).toList();
+    if (allMedia.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No media in this chat')),
       );
       return;
     }
 
-    // Newest first
-    final sortedMedia = List.of(mediaMessages)
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    // Sort newest first
+    allMedia.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    final photos = allMedia.where((m) => m.type == MessageType.image).toList();
+    final videos = allMedia.where((m) => m.type == MessageType.video).toList();
+    final documents = allMedia.where((m) => m.type == MessageType.document || m.type == MessageType.audio).toList();
 
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('All Media (${sortedMedia.length})'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: sortedMedia.length,
-            itemBuilder: (c, index) {
-              final msg = sortedMedia[index];
-              final fullPath = _resolveMedia(msg);
-              final filename = msg.mediaPath!.split(RegExp(r'[/\\]')).last;
-              return ListTile(
-                leading: Icon(_getIconForType(msg.type)),
-                title: Text(filename, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(msg.sender),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await OpenFilex.open(fullPath);
-                },
-              );
-            },
+      builder: (ctx) => DefaultTabController(
+        length: 4,
+        child: AlertDialog(
+          title: const Text('Media'),
+          contentPadding: const EdgeInsets.only(top: 8),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 420,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'All'),
+                    Tab(text: 'Photos'),
+                    Tab(text: 'Videos'),
+                    Tab(text: 'Docs'),
+                  ],
+                  labelColor: Colors.teal,
+                  indicatorColor: Colors.teal,
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildMediaGrid(allMedia, ctx),
+                      _buildMediaGrid(photos, ctx),
+                      _buildMediaGrid(videos, ctx),
+                      _buildMediaGrid(documents, ctx),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
       ),
+    );
+  }
+
+  Widget _buildMediaGrid(List<ChatMessage> mediaList, BuildContext dialogContext) {
+    if (mediaList.isEmpty) {
+      return const Center(child: Text('Nothing here'));
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: mediaList.length,
+      itemBuilder: (c, index) {
+        final msg = mediaList[index];
+        final fullPath = _resolveMedia(msg);
+        final filename = msg.mediaPath!.split(RegExp(r'[/\\]')).last;
+
+        Widget preview;
+        if (msg.type == MessageType.image) {
+          preview = Image.file(
+            File(fullPath),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 40),
+          );
+        } else if (msg.type == MessageType.video) {
+          preview = VideoThumbnailWidget(
+            path: fullPath,
+            width: 100,
+            height: 100,
+          );
+        } else {
+          preview = Center(
+            child: Icon(_getIconForType(msg.type), size: 42),
+          );
+        }
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.pop(dialogContext);
+            OpenFilex.open(fullPath);
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                preview,
+                if (msg.type != MessageType.image)
+                  Positioned(
+                    bottom: 4,
+                    left: 4,
+                    right: 4,
+                    child: Container(
+                      color: Colors.black54,
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Text(
+                        filename,
+                        style: const TextStyle(color: Colors.white, fontSize: 10),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -292,22 +443,34 @@ class _ChatScreenState extends State<ChatScreen> {
                             ? 'No messages'
                             : 'No matches for "$_search"'),
                       )
-                    : ListView.builder(
-                        reverse: true, // newest at bottom when scrolled
-                        padding: const EdgeInsets.only(top: 8, bottom: 12),
-                        itemCount: _filtered.length,
+                    : Container(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF0B141A)
+                            : const Color(0xFFECE5DD),
+                        child: ListView.builder(
+                          reverse: true,
+                          padding: const EdgeInsets.only(top: 8, bottom: 12),
+                          itemCount: _displayItems.length,
                         itemBuilder: (context, index) {
-                          // reverse indexing
-                          final msg = _filtered[_filtered.length - 1 - index];
+                          // reverse indexing for display (newest bottom)
+                          final item = _displayItems[_displayItems.length - 1 - index];
+
+                          if (item is DateTime) {
+                            return _buildDateSeparator(item);
+                          }
+
+                          final msg = item as ChatMessage;
                           final isSelf = _isSelf(msg);
                           final mediaPath = msg.mediaPath != null ? _resolveMedia(msg) : null;
                           return MessageBubble(
                             message: msg,
                             isSelf: isSelf,
                             mediaFullPath: mediaPath,
+                            showSenderName: widget.chat.isGroup,
                           );
                         },
                       ),
+                    ),
           ),
           if (_search.isNotEmpty)
             Padding(

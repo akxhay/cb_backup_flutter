@@ -31,7 +31,7 @@ class CbbackupApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'cbbackup',
+      title: 'CB Backup',
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.teal,

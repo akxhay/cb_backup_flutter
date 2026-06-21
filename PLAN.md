@@ -28,6 +28,8 @@ The app provides a WhatsApp-like experience for browsing chat history offline, w
    - Proper bubble alignment (right = self, left = other).
    - Support for text messages and embedded media (images).
    - Scrollable, clean, modern UI.
+   - Date/day separators visible (TODAY, YESTERDAY, dates) like WhatsApp.
+   - Loading indicators for any async processing (e.g., video thumbnail generation).
    - Show sender name on other people's messages.
 
 4. **Search**
@@ -52,6 +54,8 @@ The app provides a WhatsApp-like experience for browsing chat history offline, w
    - Media messages are shown with appropriate icons.
    - Tapping any media (image or other) opens it in the device's **default application** (photo viewer, video player, PDF reader, etc.).
    - Uses `open_filex` package.
+   - "View all media" shows a WhatsApp-style gallery with tabs for All/Photos/Videos/Docs and grid view.
+   - Videos use icon + filename (thumbnails reverted due to performance lag in chat scroll).
 
 7. **UI & Platform**
    - Modern, catchy Material 3 design.
@@ -134,6 +138,11 @@ sample/
 
 ## Recent Changes
 
+### 2026-06-21 - Loaders for async processing
+- Added `CircularProgressIndicator` loaders in UI for any processing:
+  - Video thumbnail generation (in chat message bubbles and media gallery grid) now displays a small spinner while asynchronously extracting the frame using `video_thumbnail`.
+  - This covers the requirement that any processing (e.g. thumbnail creation) must show a loader.
+
 ### 2026-06-21 - Full Media Type Support + Open in Default App
 - Expanded `MessageType` enum to support `video`, `audio`, `document` (in addition to `image`, `text`, `system`).
 - Added `getMediaTypeFromFilename()` in `chat_parser.dart` to detect type from attachment extension.
@@ -206,13 +215,34 @@ flutter test
 
 - **2026-06-21**: Added full support for all media types (images, video, audio, documents). Tapping media now opens it in the device's default application using `open_filex`. Expanded MessageType, improved parser and UI. (see "Recent Changes")
 - **2026-06-21**: Fixed build error: Moved `IconData` / `Icons` logic out of `lib/models/chat.dart` (kept models Flutter-free). Icon mapping now lives in `message_bubble.dart`.
-- **2026-06-21**: Improved "me" / perspective system (further refinements):
-  - When "who am I" is chosen (import or change), it is **automatically added** to the usernames config.
-  - Perspective chooser now **only allows selection from allowed/configured usernames** (intersection with chat participants). Falls back gracefully.
-  - Clicking the chat **name** in the AppBar (after entering the chat) now shows a menu with options: "View all media" and "Change perspective" (for 1:1).
-  - "View all media" shows a scrollable list of all media in the chat; tapping any opens it in the default app.
-  - Auto-add centralized in `setSelfForChat`.
-  - Previous smart 1:1 defaults, no-reprompt on known, per-chat overrides, and ordered config remain.
+- **2026-06-21**: Major WhatsApp-like UI improvements:
+  - Bubbles now use authentic WhatsApp colors (light green sent / white received in light mode; dark green in dark mode).
+  - Date/day separators ("TODAY", "YESTERDAY", dates) between message groups like WhatsApp.
+  - Clicking chat name in header opens menu with "View all media" + "Change perspective".
+  - Media viewer upgraded to tabbed gallery (All / Photos / Videos / Docs) with grid layout.
+  - Background color closer to WhatsApp.
+  - "Show media" now offers type filtering like WhatsApp.
+- **2026-06-21**: Made loading of saved chats robust after app rebuild/restart:
+  - loadMessages now safely handles corrupt/missing messages.json (try/catch + safe cast + fallback to parsing _chat.txt).
+  - ChatScreen._load now catches errors so _loading always becomes false (prevents hanging on progress / blank screen).
+  - This fixes "list shows chats (with sender names as titles) but opening a chat is blank" after rebuild.
+  - Also normalized line endings in parseChat.
+- **2026-06-21**: Duplicate import handling:
+  - When re-importing a zip for the same contact/group (title match from filename), show a confirmation dialog asking whether to merge.
+  - On "Merge": parse new messages, combine with existing (sorted by date + deduplicated by timestamp|sender|text|media), copy new media files, update messages.json + metadata.
+  - Added `mergeIntoChat` method.
+- **2026-06-21**: Restored video thumbnails with visibility-based loading to prevent lag:
+  - Video thumbnails are generated only when the bubble/grid item enters the viewport (on screen).
+  - Uses a StatefulWidget that loads in initState and releases the bitmap in dispose (when scrolled off-screen).
+  - This applies lazy loading for heavy media (videos) and keeps memory low for long chats.
+  - Same pattern helps with general chat data rendering lag.
+  - Thumbnails show loader while processing.
+  - Gallery also uses the widget for video items.
+  - Loaders section from previous update removed as the causing feature was reverted.
+- **2026-06-21**: Enhanced duplicate handling for imports:
+  - Import as new for same base title now uses labels e.g. "Rashmi Arya (2)", keeping participant/sender names unchanged.
+  - Merge popup presents options for each labeled version to merge into.
+  - Uses extractBaseChatTitle / extractLabelNumber.
 - **2026-06-21**: Added strict zip filename parsing for chat title. Enforce "WhatsApp Chat - Name.zip" format or show error. Updated sample handling and tests.
 - **2026-06-21**: Fixed build error in `chat_list_screen.dart` (`ctx` → `context` in `_askCustomName` call).
 - **2026-06-20**: Core MVP completed (import, viewer, search, self identification).

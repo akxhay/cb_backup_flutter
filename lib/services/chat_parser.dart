@@ -14,7 +14,9 @@ final _dateFormat = DateFormat('dd/MM/yy, h:mm:ss a');
 /// Parses raw WhatsApp _chat.txt content into messages.
 /// [myAliases] are used only for caller-side isSelf computation (parser stays neutral).
 List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const []}) {
-  final lines = rawContent.split('\n');
+  // Normalize line endings (the txt from zip may have \r\n on some systems)
+  final normalized = rawContent.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  final lines = normalized.split('\n');
   final messages = <ChatMessage>[];
 
   ChatMessage? current;
@@ -176,6 +178,21 @@ String parseChatTitleFromZipFilename(String filePath) {
   }
 
   return title;
+}
+
+/// Extracts the base title without any numeric label suffix like " (2)".
+String extractBaseChatTitle(String title) {
+  final match = RegExp(r'^(.*)\s*\(\d+\)$').firstMatch(title);
+  return match != null ? match.group(1)!.trim() : title.trim();
+}
+
+/// Returns the numeric label if present, e.g. 2 for "Foo (2)", else 1.
+int extractLabelNumber(String title) {
+  final match = RegExp(r'^(.*)\s*\((\d+)\)$').firstMatch(title);
+  if (match != null) {
+    return int.tryParse(match.group(2)!) ?? 1;
+  }
+  return 1;
 }
 
 /// Determines the media type based on file extension.

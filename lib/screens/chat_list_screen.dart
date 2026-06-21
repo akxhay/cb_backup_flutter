@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat.dart';
+import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
 import '../widgets/self_chooser_dialog.dart';
@@ -21,45 +25,121 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _importChat(BuildContext context) async {
     setState(() => _importing = true);
     try {
-      final repo = context.read<ChatRepository>();
-      final chat = await repo.importFromPicker();
-      if (chat != null && mounted) {
-        await _maybePromptForSelf(context, chat);
-        setState(() {});
-      }
-    } catch (e) {
-      if (mounted) {
-        final msg = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $msg')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _importing = false);
-    }
-  }
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+      );
+      if (result == null || result.files.isEmpty) return;
 
-  Future<void> _loadSample(BuildContext context) async {
-    setState(() => _importing = true);
-    try {
+      final path = result.files.single.path;
+      if (path == null) return;
+
+      final file = File(path);
       final repo = context.read<ChatRepository>();
-      // Relative to project root for demo. Title will be parsed from "WhatsApp Chat - Rashmi Arya.zip"
-      const samplePath = 'sample/WhatsApp Chat - Rashmi Arya.zip';
-      final chat = await repo.importSample(samplePath);
-      if (chat != null && mounted) {
-        await _maybePromptForSelf(context, chat);
-        setState(() {});
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sample zip not found at sample/ directory')),
-        );
+
+      // Check using base title (strip labels like (2))
+      String? prospectiveTitle;
+      try {
+        prospectiveTitle = parseChatTitleFromZipFilename(path);
+      } catch (_) {}
+
+      List<Chat> variants = [];
+      String baseTitle = '';
+      if (prospectiveTitle != null) {
+        baseTitle = extractBaseChatTitle(prospectiveTitle);
+        final l = baseTitle.toLowerCase().trim();
+        variants = repo.chats
+            .where((c) => extractBaseChatTitle(c.title).toLowerCase().trim() == l)
+            .toList();
       }
+
+      Chat? mergeTarget;
+      String? newLabeledTitle;
+
+      if (variants.isNotEmpty) {
+        // Build options for dialog
+        final options = <Map<String, dynamic>>[];
+        for (final v in variants) {
+          options.add({'type': 'merge', 'chat': v, 'label': v.title});
+        }
+
+        // Compute next label
+        int maxLabel = 1;
+        for (final v in variants) {
+          final num = extractLabelNumber(v.title);
+          if (num > maxLabel) maxLabel = num;
+        }
+        final nextLabel = maxLabel + 1;
+        final importNewLabel = '$baseTitle ($nextLabel)';
+        options.add({'type': 'new', 'label': importNewLabel});
+
+        final choice = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Chat already exists'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('A chat for "$baseTitle" already exists.'),
+                const SizedBox(height: 12),
+                const Text('Choose action:'),
+                const SizedBox(height: 8),
+                ...options.map((opt) {
+                  return ListTile(
+                    title: Text(opt['label']),
+                    onTap: () => Navigator.pop(ctx, opt),
+                    leading: Icon(
+                      opt['type'] == 'merge' ? Icons.merge_type : Icons.add,
+                    ),
+                  );
+                }).toList(),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        if (choice == null) {
+          setState(() => _importing = false);
+          return;
+        }
+
+        if (choice['type'] == 'merge') {
+          mergeTarget = choice['chat'] as Chat;
+        } else {
+          newLabeledTitle = choice['label'] as String;
+        }
+      }
+
+      if (mergeTarget != null) {
+        await repo.mergeIntoChat(mergeTarget, file);
+      } else {
+        await repo.importZip(file, forceTitle: newLabeledTitle);
+      }
+
+      // Handle self prompt for the relevant chat
+      Chat? theChat;
+      if (mergeTarget != null) {
+        theChat = mergeTarget;
+      } else if (repo.chats.isNotEmpty) {
+        // The newly imported one (with label if any) is now first
+        theChat = repo.chats.first;
+      }
+      if (theChat != null && mounted) {
+        await _maybePromptForSelf(context, theChat);
+      }
+      setState(() {});
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sample import failed: $msg')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Import failed: $msg')));
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -77,14 +157,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
 
     if (autoSelf != null && autoSelf.isNotEmpty) {
-      await identity.setSelfForChat(chat.id, autoSelf); // auto-add happens inside
+      await identity.setSelfForChat(
+        chat.id,
+        autoSelf,
+      ); // auto-add happens inside
       return; // no prompt needed
     }
 
     // Only allow choosing from configured (allowed) usernames if any match in this chat
     List<String> chooserCandidates = chat.participants;
-    final allowed = identity.myUsernames.where((u) =>
-        chat.participants.any((p) => p.toLowerCase() == u.toLowerCase())).toList();
+    final allowed = identity.myUsernames
+        .where(
+          (u) =>
+              chat.participants.any((p) => p.toLowerCase() == u.toLowerCase()),
+        )
+        .toList();
     if (allowed.isNotEmpty) {
       chooserCandidates = allowed;
     }
@@ -104,7 +191,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
 
     if (selected != null && selected.isNotEmpty) {
-      await identity.setSelfForChat(chat.id, selected); // auto-adds to usernames
+      await identity.setSelfForChat(
+        chat.id,
+        selected,
+      ); // auto-adds to usernames
     } else if (selected == '') {
       // user picked custom in dialog
       final custom = await _askCustomName(context);
@@ -127,7 +217,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
           decoration: const InputDecoration(hintText: 'e.g. Xharma'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(c, controller.text),
             child: const Text('Save'),
@@ -145,8 +238,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
         title: const Text('Delete chat?'),
         content: Text('Remove "${chat.title}" from the app?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -203,12 +302,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     icon: const Icon(Icons.upload_file),
                     label: const Text('Import chat zip'),
                   ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _importing ? null : () => _loadSample(context),
-                    icon: const Icon(Icons.folder_special_outlined),
-                    label: const Text('Load sample demo'),
-                  ),
                 ],
               ),
             )
@@ -227,7 +320,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       color: Colors.white,
                     ),
                   ),
-                  title: Text(chat.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  title: Text(
+                    chat.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Text(
                     chat.lastMessagePreview ?? '${chat.messageCount} messages',
                     maxLines: 1,
@@ -239,9 +336,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   ),
                   onTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(chat: chat),
-                      ),
+                      MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
                     );
                   },
                   onLongPress: () => _deleteChat(chat),
@@ -268,5 +363,3 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return '${d.day}/${d.month}/${d.year}';
   }
 }
-
-
