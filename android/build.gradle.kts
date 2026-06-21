@@ -2,6 +2,17 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Extra repositories for old/unmaintained plugins (video_thumbnail etc.)
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+    }
+}
+
+// Workaround for very old plugins (like video_thumbnail) that still reference jcenter in their build files
+subprojects {
+    afterEvaluate {
+        if (project.plugins.hasPlugin("com.android.library") || project.plugins.hasPlugin("com.android.application")) {
+            // nothing needed
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -24,6 +25,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _importing = false;
   bool _isSearching = false;
   String _searchQuery = '';
+  List<Chat> _searchResults = [];
+  bool _isLoadingSearch = false;
+  Timer? _searchDebounce;
 
   Future<void> _importChat(BuildContext context) async {
     setState(() => _importing = true);
@@ -137,6 +141,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
         await _maybePromptForSelf(context, theChat);
       }
       setState(() {});
+      if (_isSearching) {
+        _performGlobalSearch(_searchQuery);
+      }
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
@@ -258,18 +265,69 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
+  Future<void> _performGlobalSearch(String query) async {
+    if (!mounted) return;
+
+    final repo = context.read<ChatRepository>();
+    final allChats = repo.chats;
+
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = List.of(allChats);
+        _isLoadingSearch = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoadingSearch = true;
+    });
+
+    final q = query.toLowerCase().trim();
+    final List<Chat> results = [];
+
+    // Fast filter: title or last message preview
+    for (final chat in allChats) {
+      if (chat.title.toLowerCase().contains(q) ||
+          (chat.lastMessagePreview ?? '').toLowerCase().contains(q)) {
+        results.add(chat);
+      }
+    }
+
+    // Search inside messages for remaining chats
+    final remaining = allChats.where((c) => !results.any((r) => r.id == c.id)).toList();
+
+    if (remaining.isNotEmpty) {
+      final futures = remaining.map((chat) async {
+        try {
+          final messages = await repo.loadMessages(chat);
+          final hasMatch = messages.any((msg) =>
+              msg.text.toLowerCase().contains(q) ||
+              msg.sender.toLowerCase().contains(q));
+          return hasMatch ? chat : null;
+        } catch (_) {
+          return null;
+        }
+      });
+
+      final messageMatches = await Future.wait(futures);
+      results.addAll(messageMatches.whereType<Chat>());
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _searchResults = results;
+      _isLoadingSearch = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
     final chats = repo.chats;
 
-    final filteredChats = _searchQuery.isEmpty
-        ? chats
-        : chats.where((chat) {
-            final q = _searchQuery.toLowerCase();
-            return chat.title.toLowerCase().contains(q) ||
-                (chat.lastMessagePreview ?? '').toLowerCase().contains(q);
-          }).toList();
+    final displayChats = _isSearching ? _searchResults : chats;
 
     return Scaffold(
       appBar: AppBar(
@@ -284,6 +342,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   setState(() {
                     _searchQuery = value;
                   });
+                  _searchDebounce?.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                    _performGlobalSearch(value);
+                  });
                 },
               )
             : const Text('CB Backup'),
@@ -295,7 +357,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 setState(() {
                   _isSearching = false;
                   _searchQuery = '';
+                  _searchResults = [];
+                  _isLoadingSearch = false;
                 });
+                _searchDebounce?.cancel();
               },
             )
           else ...[
@@ -303,10 +368,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
               icon: const Icon(Icons.search),
               tooltip: 'Search chats',
               onPressed: () {
+                final currentChats = context.read<ChatRepository>().chats;
                 setState(() {
                   _isSearching = true;
                   _searchQuery = '';
+                  _searchResults = List.of(currentChats);
+                  _isLoadingSearch = false;
                 });
+                _searchDebounce?.cancel();
               },
             ),
             IconButton(
@@ -357,106 +426,121 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ],
               ),
             )
-          : ListView.builder(
-              itemCount: filteredChats.length,
-              padding: const EdgeInsets.only(top: 8, bottom: 80),
-              itemBuilder: (context, index) {
-                final chat = filteredChats[index];
-                final preview = (chat.lastMessagePreview ?? '').trim().isNotEmpty
-                    ? chat.lastMessagePreview!
-                    : '${chat.messageCount} messages';
+          : Column(
+              children: [
+                if (_isSearching && _searchQuery.isNotEmpty && _isLoadingSearch)
+                  const LinearProgressIndicator(minHeight: 2),
+                Expanded(
+                  child: displayChats.isEmpty && _isSearching && _searchQuery.isNotEmpty
+                      ? Center(
+                          child: Text(
+                            'No results for "$_searchQuery"',
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: displayChats.length,
+                          padding: const EdgeInsets.only(top: 8, bottom: 80),
+                          itemBuilder: (context, index) {
+                            final chat = displayChats[index];
+                            final preview = (chat.lastMessagePreview ?? '').trim().isNotEmpty
+                                ? chat.lastMessagePreview!
+                                : '${chat.messageCount} messages';
 
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Card(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
-                        );
-                      },
-                      onLongPress: () => _deleteChat(chat),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 26,
-                              backgroundColor: chat.isGroup
-                                  ? Theme.of(context).colorScheme.primaryContainer
-                                  : Theme.of(context).colorScheme.secondaryContainer,
-                              child: Icon(
-                                chat.isGroup ? Icons.group : Icons.person,
-                                color: chat.isGroup
-                                    ? Theme.of(context).colorScheme.onPrimaryContainer
-                                    : Theme.of(context).colorScheme.onSecondaryContainer,
-                                size: 26,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    chat.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              _formatDate(chat.importDate),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                            const SizedBox(width: 4),
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert, size: 18),
-                              onSelected: (value) {
-                                if (value == 'delete') {
-                                  _deleteChat(chat);
-                                }
-                              },
-                              itemBuilder: (c) => [
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete, color: Colors.red, size: 20),
-                                      SizedBox(width: 8),
-                                      Text('Delete chat'),
-                                    ],
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              child: Card(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+                                    );
+                                  },
+                                  onLongPress: () => _deleteChat(chat),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 26,
+                                          backgroundColor: chat.isGroup
+                                              ? Theme.of(context).colorScheme.primaryContainer
+                                              : Theme.of(context).colorScheme.secondaryContainer,
+                                          child: Icon(
+                                            chat.isGroup ? Icons.group : Icons.person,
+                                            color: chat.isGroup
+                                                ? Theme.of(context).colorScheme.onPrimaryContainer
+                                                : Theme.of(context).colorScheme.onSecondaryContainer,
+                                            size: 26,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                chat.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                preview,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(
+                                          _formatDate(chat.importDate),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        PopupMenuButton<String>(
+                                          icon: const Icon(Icons.more_vert, size: 18),
+                                          onSelected: (value) {
+                                            if (value == 'delete') {
+                                              _deleteChat(chat);
+                                            }
+                                          },
+                                          itemBuilder: (c) => [
+                                            const PopupMenuItem(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.delete, color: Colors.red, size: 20),
+                                                  SizedBox(width: 8),
+                                                  Text('Delete chat'),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    ),
-                  ),
-                );
-              },
+                ),
+              ],
             ),
       floatingActionButton: chats.isNotEmpty
           ? FloatingActionButton(
@@ -476,5 +560,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
       return 'Today';
     }
     return '${d.day}/${d.month}/${d.year}';
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 }
