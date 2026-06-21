@@ -243,6 +243,13 @@ flutter test
   - Import as new for same base title now uses labels e.g. "Rashmi Arya (2)", keeping participant/sender names unchanged.
   - Merge popup presents options for each labeled version to merge into.
   - Uses extractBaseChatTitle / extractLabelNumber.
+- **2026-06-21**: Fixed persisted chats not loading after force close / rebuild on iPhone:
+  - Made _persist and all messages.json writes atomic (write to .tmp + rename + flush) to survive force close during write.
+  - load() now notifies listeners after populating (helps watchers on cold start).
+  - On corrupt meta, delete the bad file.
+  - loadMessages auto-recovers by re-saving json from txt.
+  - Added debugPrint on load errors.
+  - This ensures metadata and message data survive force close and app restarts on device.
 - **2026-06-21**: Added strict zip filename parsing for chat title. Enforce "WhatsApp Chat - Name.zip" format or show error. Updated sample handling and tests.
 - **2026-06-21**: Fixed build error in `chat_list_screen.dart` (`ctx` → `context` in `_askCustomName` call).
 - **2026-06-20**: Core MVP completed (import, viewer, search, self identification).

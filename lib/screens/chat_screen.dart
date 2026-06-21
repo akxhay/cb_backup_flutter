@@ -440,7 +440,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 : _filtered.isEmpty
                     ? Center(
                         child: Text(_search.isEmpty
-                            ? 'No messages'
+                            ? 'No messages loaded yet'
                             : 'No matches for "$_search"'),
                       )
                     : Container(

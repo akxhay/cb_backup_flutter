@@ -45,15 +45,25 @@ class ChatRepository extends ChangeNotifier {
       final content = await metaFile.readAsString();
       final list = (jsonDecode(content) as List).cast<Map<String, dynamic>>();
       _chats.addAll(list.map(Chat.fromJson));
-    } catch (_) {
+      notifyListeners();
+    } catch (e) {
       // ignore corrupt meta for MVP
+      debugPrint('Failed to load chats meta: $e');
+      // Try to delete corrupt file so next import can start fresh
+      try { await metaFile.delete(); } catch (_) {}
     }
   }
 
   Future<void> _persist() async {
     final metaFile = await _getMetaFile();
     final jsonStr = jsonEncode(_chats.map((c) => c.toJson()).toList());
-    await metaFile.writeAsString(jsonStr);
+    await _writeFileAtomically(metaFile, jsonStr);
+  }
+
+  Future<void> _writeFileAtomically(File file, String content) async {
+    final temp = File('${file.path}.tmp');
+    await temp.writeAsString(content, flush: true);
+    await temp.rename(file.path);
   }
 
   /// Picks a zip via platform picker and imports it.
@@ -143,7 +153,7 @@ class ChatRepository extends ChangeNotifier {
 
     // Persist full messages alongside
     final messagesFile = File(p.join(chatDir.path, 'messages.json'));
-    await messagesFile.writeAsString(jsonEncode(messages.map((m) => m.toJson()).toList()));
+    await _writeFileAtomically(messagesFile, jsonEncode(messages.map((m) => m.toJson()).toList()));
 
     _chats.insert(0, chat);
     await _persist();
@@ -217,7 +227,7 @@ class ChatRepository extends ChangeNotifier {
 
       // Overwrite messages.json with merged
       final msgFile = File(p.join(target.extractedDir, 'messages.json'));
-      await msgFile.writeAsString(jsonEncode(merged.map((m) => m.toJson()).toList()));
+      await _writeFileAtomically(msgFile, jsonEncode(merged.map((m) => m.toJson()).toList()));
 
       // Update the in-memory chat metadata
       final idx = _chats.indexWhere((c) => c.id == target.id);
@@ -252,7 +262,12 @@ class ChatRepository extends ChangeNotifier {
       final txt = File(p.join(chat.extractedDir, '_chat.txt'));
       if (await txt.exists()) {
         final raw = await txt.readAsString();
-        return parseChat(raw);
+        final msgs = parseChat(raw);
+        // Re-save as json for faster future loads and robustness after rebuilds
+        try {
+          await _writeFileAtomically(messagesFile, jsonEncode(msgs.map((m) => m.toJson()).toList()));
+        } catch (_) {}
+        return msgs;
       }
       return [];
     }
@@ -265,7 +280,11 @@ class ChatRepository extends ChangeNotifier {
       final txt = File(p.join(chat.extractedDir, '_chat.txt'));
       if (await txt.exists()) {
         final raw = await txt.readAsString();
-        return parseChat(raw);
+        final msgs = parseChat(raw);
+        try {
+          await _writeFileAtomically(messagesFile, jsonEncode(msgs.map((m) => m.toJson()).toList()));
+        } catch (_) {}
+        return msgs;
       }
       return [];
     }
