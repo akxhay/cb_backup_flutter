@@ -30,6 +30,17 @@ final _timestampRe = RegExp(
   return (media: media, cleanedText: cleaned);
 }
 
+/// Removes WhatsApp's "This message was edited" marker from the text and returns whether it was edited.
+({String text, bool isEdited}) _stripEditedMarker(String text) {
+  // Matches variations like: "text ‎<This message was edited>" or "text <This message was edited>"
+  final editedRe = RegExp(r'\s*[' + _lrm + r']?\s*<This message was edited>', caseSensitive: false);
+  if (editedRe.hasMatch(text)) {
+    final cleaned = text.replaceAll(editedRe, '').trim();
+    return (text: cleaned, isEdited: true);
+  }
+  return (text: text.trim(), isEdited: false);
+}
+
 final _dateFormat = DateFormat('dd/MM/yy, h:mm:ss a');
 
 /// Parses raw WhatsApp _chat.txt content into messages.
@@ -84,16 +95,18 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
           (ts.difference(current.timestamp).inSeconds.abs() < 120) &&
           media == null) {
         // Append as caption to the existing media message (immutable)
-        final newText = current.text.isNotEmpty
+        final combined = current.text.isNotEmpty
             ? '${current.text}\n$finalText'
             : finalText;
+        final stripped = _stripEditedMarker(combined);
 
         current = ChatMessage(
           timestamp: current.timestamp,
           sender: current.sender,
-          text: newText,
+          text: stripped.text,
           mediaPath: current.mediaPath,
           type: current.type,
+          isEdited: stripped.isEdited || current.isEdited,
         );
         continue;
       }
@@ -103,12 +116,14 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
         messages.add(current);
       }
 
+      final stripped = _stripEditedMarker(finalText);
       current = ChatMessage(
         timestamp: ts,
         sender: sender,
-        text: finalText,
+        text: stripped.text,
         mediaPath: media,
         type: type,
+        isEdited: stripped.isEdited,
       );
       continue;
     }
@@ -125,39 +140,45 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
           // keep any caption text from the cont (tag already stripped by helper)
           final cleanedCont = attachedInfo.cleanedText;
 
-          final newText = current.text.isNotEmpty && cleanedCont.isNotEmpty
+          final combined = current.text.isNotEmpty && cleanedCont.isNotEmpty
               ? '${current.text}\n$cleanedCont'
               : (cleanedCont.isNotEmpty ? cleanedCont : current.text);
+          final stripped = _stripEditedMarker(combined);
 
           current = ChatMessage(
             timestamp: current.timestamp,
             sender: current.sender,
-            text: newText,
+            text: stripped.text,
             mediaPath: newMedia,
             type: newType,
+            isEdited: stripped.isEdited || current.isEdited,
           );
         } else {
           // Regular text continuation
-          final newText = current.text.isEmpty
+          final combined = current.text.isEmpty
               ? cont
               : '${current.text}\n$cont';
+          final stripped = _stripEditedMarker(combined);
 
           current = ChatMessage(
             timestamp: current.timestamp,
             sender: current.sender,
-            text: newText,
+            text: stripped.text,
             mediaPath: current.mediaPath,
             type: current.type,
+            isEdited: stripped.isEdited || current.isEdited,
           );
         }
       }
     } else {
       // Orphan line before first message
+      final stripped = _stripEditedMarker(line.trim());
       messages.add(ChatMessage(
         timestamp: DateTime.now(),
         sender: 'System',
-        text: line.trim(),
+        text: stripped.text,
         type: MessageType.system,
+        isEdited: stripped.isEdited,
       ));
     }
   }

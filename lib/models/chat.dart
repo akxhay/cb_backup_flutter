@@ -27,6 +27,7 @@ class ChatMessage {
   final String text;
   final String? mediaPath; // relative filename inside the extracted chat dir
   final MessageType type;
+  final bool isEdited;
 
   const ChatMessage({
     required this.timestamp,
@@ -34,6 +35,7 @@ class ChatMessage {
     required this.text,
     this.mediaPath,
     this.type = MessageType.text,
+    this.isEdited = false,
   });
 
   bool get isFromSelf => false; // resolved at runtime using aliases
@@ -48,6 +50,7 @@ class ChatMessage {
         (e) => e.name == (json['type'] as String? ?? 'text'),
         orElse: () => MessageType.text,
       ),
+      isEdited: json['isEdited'] as bool? ?? false,
     );
   }
 
@@ -57,6 +60,7 @@ class ChatMessage {
         'text': text,
         if (mediaPath != null) 'mediaPath': mediaPath,
         'type': type.name,
+        'isEdited': isEdited,
       };
 
   String get formattedTime => DateFormat('HH:mm').format(timestamp);
