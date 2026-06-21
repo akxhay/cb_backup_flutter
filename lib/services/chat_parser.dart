@@ -293,3 +293,13 @@ MessageType getMediaTypeFromFilename(String filename) {
   // Everything else (pdf, docx, txt, vcf, zip, unknown, etc.) is treated as document
   return MessageType.document;
 }
+
+/// Returns true if the message represents a sticker.
+/// Heuristic: image type + .webp (common for WA stickers) or filename contains 'sticker'.
+bool isSticker(ChatMessage msg) {
+  if (msg.type != MessageType.image || msg.mediaPath == null) return false;
+  final p = msg.mediaPath!.toLowerCase();
+  if (p.endsWith('.webp')) return true;
+  if (p.contains('sticker')) return true;
+  return false;
+}

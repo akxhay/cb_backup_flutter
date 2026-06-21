@@ -6,6 +6,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat.dart';
+import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
 import '../widgets/self_chooser_dialog.dart';
@@ -197,22 +198,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  IconData _getIconForType(MessageType type) {
-    switch (type) {
-      case MessageType.image:
-        return Icons.image;
-      case MessageType.video:
-        return Icons.videocam;
-      case MessageType.audio:
-        return Icons.audiotrack;
-      case MessageType.document:
-        return Icons.insert_drive_file;
-      default:
-        return Icons.attach_file;
-    }
-  }
-
-  Future<void> _showAllMedia() async {
+  Future<void> _openMediaGallery() async {
     if (_loading || _allMessages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No messages loaded yet')),
@@ -220,135 +206,21 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final allMedia = _allMessages.where((m) => m.mediaPath != null).toList();
-    if (allMedia.isEmpty) {
+    final hasMedia = _allMessages.any((m) => m.mediaPath != null);
+    if (!hasMedia) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No media in this chat')),
       );
       return;
     }
 
-    // Sort newest first
-    allMedia.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    final photos = allMedia.where((m) => m.type == MessageType.image).toList();
-    final videos = allMedia.where((m) => m.type == MessageType.video).toList();
-    final documents = allMedia.where((m) => m.type == MessageType.document || m.type == MessageType.audio).toList();
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => DefaultTabController(
-        length: 4,
-        child: AlertDialog(
-          title: const Text('Media'),
-          contentPadding: const EdgeInsets.only(top: 8),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 420,
-            child: Column(
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'All'),
-                    Tab(text: 'Photos'),
-                    Tab(text: 'Videos'),
-                    Tab(text: 'Docs'),
-                  ],
-                  labelColor: Colors.teal,
-                  indicatorColor: Colors.teal,
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _buildMediaGrid(allMedia, ctx),
-                      _buildMediaGrid(photos, ctx),
-                      _buildMediaGrid(videos, ctx),
-                      _buildMediaGrid(documents, ctx),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
-          ],
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _MediaGalleryScreen(
+          messages: _allMessages,
+          chat: widget.chat,
         ),
       ),
-    );
-  }
-
-  Widget _buildMediaGrid(List<ChatMessage> mediaList, BuildContext dialogContext) {
-    if (mediaList.isEmpty) {
-      return const Center(child: Text('Nothing here'));
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 6,
-        mainAxisSpacing: 6,
-      ),
-      itemCount: mediaList.length,
-      itemBuilder: (c, index) {
-        final msg = mediaList[index];
-        final fullPath = _resolveMedia(msg);
-        final filename = msg.mediaPath!.split(RegExp(r'[/\\]')).last;
-
-        Widget preview;
-        if (msg.type == MessageType.image) {
-          preview = Image.file(
-            File(fullPath),
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 40),
-          );
-        } else if (msg.type == MessageType.video) {
-          preview = VideoThumbnailWidget(
-            path: fullPath,
-            width: 100,
-            height: 100,
-          );
-        } else {
-          preview = Center(
-            child: Icon(_getIconForType(msg.type), size: 42),
-          );
-        }
-
-        return GestureDetector(
-          onTap: () {
-            Navigator.pop(dialogContext);
-            OpenFilex.open(fullPath);
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                preview,
-                Positioned(
-                  bottom: 4,
-                  left: 4,
-                  right: 4,
-                  child: Container(
-                    color: Colors.black54,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Text(
-                      (msg.text.isNotEmpty ? msg.text : filename),
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -364,50 +236,32 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: PopupMenuButton<String>(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.chat.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(
-                widget.chat.isGroup
-                    ? '${widget.chat.participants.length} participants'
-                    : widget.chat.participants.join(', '),
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-          onSelected: (value) async {
-            if (value == 'perspective') {
-              await _changePerspective();
-            } else if (value == 'media') {
-              await _showAllMedia();
-            }
-          },
-          itemBuilder: (context) {
-            final items = <PopupMenuEntry<String>>[
-              const PopupMenuItem(
-                value: 'media',
-                child: ListTile(
-                  leading: Icon(Icons.perm_media),
-                  title: Text('View all media'),
-                  dense: true,
-                ),
-              ),
-            ];
-            if (!widget.chat.isGroup) {
-              items.add(const PopupMenuItem(
-                value: 'perspective',
-                child: ListTile(
-                  leading: Icon(Icons.person_outline),
-                  title: Text('Change perspective'),
-                  dense: true,
-                ),
-              ));
-            }
-            return items;
-          },
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.chat.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(
+              widget.chat.isGroup
+                  ? '${widget.chat.participants.length} participants'
+                  : widget.chat.participants.join(', '),
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
         ),
+        actions: [
+          if (!widget.chat.isGroup)
+            IconButton(
+              icon: const Icon(Icons.person_outline),
+              tooltip: 'Change perspective',
+              onPressed: _changePerspective,
+            ),
+          IconButton(
+            icon: const Icon(Icons.photo_library),
+            tooltip: 'View all media',
+            onPressed: _openMediaGallery,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -484,3 +338,302 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 }
+
+/// Full-screen modern media gallery.
+/// Separate tabs for: All, Photos, Stickers, Videos, Documents, Audio.
+/// Modern grid with rounded corners, overlays, catchy presentation.
+class _MediaGalleryScreen extends StatefulWidget {
+  final List<ChatMessage> messages;
+  final Chat chat;
+
+  const _MediaGalleryScreen({
+    required this.messages,
+    required this.chat,
+  });
+
+  @override
+  State<_MediaGalleryScreen> createState() => _MediaGalleryScreenState();
+}
+
+class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
+  late final List<ChatMessage> _allMedia;
+  late final List<ChatMessage> _photos;
+  late final List<ChatMessage> _stickers;
+  late final List<ChatMessage> _videos;
+  late final List<ChatMessage> _documents;
+  late final List<ChatMessage> _audios;
+
+  @override
+  void initState() {
+    super.initState();
+    // Filter + newest first
+    _allMedia = widget.messages
+        .where((m) => m.mediaPath != null)
+        .toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    _photos = _allMedia
+        .where((m) => m.type == MessageType.image && !isSticker(m))
+        .toList();
+
+    _stickers = _allMedia.where((m) => isSticker(m)).toList();
+
+    _videos = _allMedia.where((m) => m.type == MessageType.video).toList();
+
+    _documents = _allMedia.where((m) => m.type == MessageType.document).toList();
+
+    _audios = _allMedia.where((m) => m.type == MessageType.audio).toList();
+  }
+
+  String _resolve(ChatMessage msg) {
+    if (msg.mediaPath == null) return '';
+    final repo = context.read<ChatRepository>();
+    return repo.resolveMediaPath(widget.chat, msg.mediaPath!);
+  }
+
+  IconData _getIconForType(MessageType type) {
+    switch (type) {
+      case MessageType.image:
+        return Icons.image;
+      case MessageType.video:
+        return Icons.videocam;
+      case MessageType.audio:
+        return Icons.audiotrack;
+      case MessageType.document:
+        return Icons.insert_drive_file;
+      default:
+        return Icons.attach_file;
+    }
+  }
+
+  void _openItem(ChatMessage msg) {
+    final fullPath = _resolve(msg);
+    if (fullPath.isEmpty) return;
+
+    final isImg = msg.type == MessageType.image;
+
+    if (isImg) {
+      // Modern full screen viewer with pinch zoom for photos and stickers
+      _showFullScreenImage(fullPath, msg.text);
+    } else {
+      OpenFilex.open(fullPath);
+    }
+  }
+
+  void _showFullScreenImage(String path, String caption) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black87,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: const Text('Preview', style: TextStyle(color: Colors.white)),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.6,
+              maxScale: 5.0,
+              child: Image.file(
+                File(path),
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white70, size: 80),
+                ),
+              ),
+            ),
+          ),
+          bottomNavigationBar: (caption.isNotEmpty)
+              ? Container(
+                  color: Colors.black87,
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    caption,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernGrid(List<ChatMessage> list) {
+    if (list.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            Text(
+              'Nothing here',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(10),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: list.length,
+      itemBuilder: (context, index) {
+        final msg = list[index];
+        final fullPath = _resolve(msg);
+        final filename = msg.mediaPath!.split(RegExp(r'[/\\]')).last;
+        final displayText = msg.text.isNotEmpty ? msg.text : filename;
+
+        Widget preview;
+        if (msg.type == MessageType.image) {
+          preview = Image.file(
+            File(fullPath),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.grey.shade200,
+              child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+            ),
+          );
+        } else if (msg.type == MessageType.video) {
+          preview = VideoThumbnailWidget(
+            path: fullPath,
+            width: 140,
+            height: 140,
+          );
+        } else {
+          preview = Container(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF1F2C34)
+                : Colors.grey.shade100,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _getIconForType(msg.type),
+                  size: 46,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    filename,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return GestureDetector(
+          onTap: () => _openItem(msg),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                preview,
+                // Catchy bottom overlay for caption / name
+                if (displayText.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Colors.black87, Colors.transparent],
+                        ),
+                      ),
+                      child: Text(
+                        displayText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          height: 1.2,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                // Small type badge top-right for non-photos
+                if (msg.type != MessageType.image)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        _getIconForType(msg.type),
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _allMedia.length;
+
+    return DefaultTabController(
+      length: 6,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Media • $total'),
+          bottom: TabBar(
+            isScrollable: true,
+            labelColor: Colors.teal,
+            indicatorColor: Colors.teal,
+            unselectedLabelColor: Colors.grey,
+            tabs: [
+              Tab(text: 'All (${_allMedia.length})'),
+              Tab(text: 'Photos (${_photos.length})'),
+              Tab(text: 'Stickers (${_stickers.length})'),
+              Tab(text: 'Videos (${_videos.length})'),
+              Tab(text: 'Documents (${_documents.length})'),
+              Tab(text: 'Audio (${_audios.length})'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _buildModernGrid(_allMedia),
+            _buildModernGrid(_photos),
+            _buildModernGrid(_stickers),
+            _buildModernGrid(_videos),
+            _buildModernGrid(_documents),
+            _buildModernGrid(_audios),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

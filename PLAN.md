@@ -54,7 +54,7 @@ The app provides a WhatsApp-like experience for browsing chat history offline, w
    - Media messages are shown with appropriate icons.
    - Tapping any media (image or other) opens it in the device's **default application** (photo viewer, video player, PDF reader, etc.).
    - Uses `open_filex` package.
-   - "View all media" shows a WhatsApp-style gallery with tabs for All/Photos/Videos/Docs and grid view.
+   - Media gallery is a dedicated icon (last in AppBar). Full-screen modern gallery with separate tabs: All / Photos / Stickers / Videos / Documents / Audio. Beautiful rounded grid cards, gradient overlays, counts, pinch-to-zoom for images.
    - Videos use icon + filename (thumbnails reverted due to performance lag in chat scroll).
 
 7. **UI & Platform**
@@ -129,6 +129,7 @@ sample/
 - Proper error when zip filename is wrong format
 - Unit tests for parsing logic
 - Modern Material 3 UI on Android + iOS
+- Modern full-screen media gallery (separate tabs for photos/stickers/videos/docs/audio) triggered by last AppBar icon, with catchy grids and image viewer
 
 **Known Current Limitations**:
 - Only images are rendered as media (videos/documents not handled)
@@ -137,6 +138,15 @@ sample/
 - Filename parsing is strict (based on sample)
 
 ## Recent Changes
+
+### 2026-06-21 - Modern full-screen media gallery (icon last + separate tabs + stickers)
+- Replaced popup "View all media" dialog with a last-position icon button in the chat AppBar (photo_library icon).
+- Implemented full-screen `_MediaGalleryScreen` with 6 scrollable tabs: All / Photos / Stickers / Videos / Documents / Audio.
+- Tabs show live counts. Modern catchy grid: 3-col square tiles, 14px rounded ClipRRect, gradient caption overlays, type badges on non-images, nice empty states.
+- Stickers separated using new `isSticker()` helper (webp files + filename heuristic).
+- Photos/stickers open in built-in full-screen InteractiveViewer (pinch zoom 0.6x-5x + caption bar). Other media open via open_filex.
+- Reuses lazy VideoThumbnailWidget. All media sorted newest first.
+- Updated AppBar to clean title + dedicated action icons (perspective + media as last).
 
 ### 2026-06-21 - Loaders for async processing
 - Added `CircularProgressIndicator` loaders in UI for any processing:
@@ -213,15 +223,16 @@ flutter test
 
 ## Change Log
 
-- **2026-06-21**: Added full support for all media types (images, video, audio, documents). Tapping media now opens it in the device's default application using `open_filex`. Expanded MessageType, improved parser and UI. (see "Recent Changes")
+- **2026-06-21**: Added full support for all media types (images, video, audio, documents, stickers). Media gallery moved to last AppBar icon, now full-screen modern with separate sections for photos/stickers/videos/documents/audio + catchy design. (see "Recent Changes")
 - **2026-06-21**: Fixed build error: Moved `IconData` / `Icons` logic out of `lib/models/chat.dart` (kept models Flutter-free). Icon mapping now lives in `message_bubble.dart`.
 - **2026-06-21**: Major WhatsApp-like UI improvements:
   - Bubbles now use authentic WhatsApp colors (light green sent / white received in light mode; dark green in dark mode).
   - Date/day separators ("TODAY", "YESTERDAY", dates) between message groups like WhatsApp.
-  - Clicking chat name in header opens menu with "View all media" + "Change perspective".
-  - Media viewer upgraded to tabbed gallery (All / Photos / Videos / Docs) with grid layout.
+  - AppBar actions: perspective icon + media gallery icon (last).
+  - Replaced popup with modern full-screen gallery: 6 separate tabs (All/Photos/Stickers/Videos/Documents/Audio), rounded catchy grid, gradient overlays, pinch-zoom image viewer for photos & stickers.
+  - Stickers now classified and viewable separately (webp-based).
   - Background color closer to WhatsApp.
-  - "Show media" now offers type filtering like WhatsApp.
+  - Media gallery shows counts per category.
 - **2026-06-21**: Made loading of saved chats robust after app rebuild/restart:
   - loadMessages now safely handles corrupt/missing messages.json (try/catch + safe cast + fallback to parsing _chat.txt).
   - ChatScreen._load now catches errors so _loading always becomes false (prevents hanging on progress / blank screen).
