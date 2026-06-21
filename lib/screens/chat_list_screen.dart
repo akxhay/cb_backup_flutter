@@ -8,10 +8,10 @@ import '../models/chat.dart';
 import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
-import '../services/theme_service.dart';
 import '../widgets/self_chooser_dialog.dart';
 import 'chat_screen.dart';
 import 'my_usernames_screen.dart';
+import 'settings_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -233,62 +233,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  void _showSettings() {
-    final themeService = context.read<ThemeService>();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Settings'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Theme'),
-            const SizedBox(height: 8),
-            RadioListTile<ThemeMode>(
-              title: const Text('System default'),
-              value: ThemeMode.system,
-              groupValue: themeService.themeMode,
-              onChanged: (mode) {
-                if (mode != null) {
-                  themeService.setThemeMode(mode);
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Light'),
-              value: ThemeMode.light,
-              groupValue: themeService.themeMode,
-              onChanged: (mode) {
-                if (mode != null) {
-                  themeService.setThemeMode(mode);
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Dark'),
-              value: ThemeMode.dark,
-              groupValue: themeService.themeMode,
-              onChanged: (mode) {
-                if (mode != null) {
-                  themeService.setThemeMode(mode);
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _deleteChat(Chat chat) async {
     final repo = context.read<ChatRepository>();
     final confirm = await showDialog<bool>(
@@ -342,7 +286,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   });
                 },
               )
-            : const Text('cbbackup'),
+            : const Text('CB Backup'),
         actions: [
           if (_isSearching)
             IconButton(
@@ -366,18 +310,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.manage_accounts),
-              tooltip: 'Manage my usernames',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MyUsernamesScreen()),
-                );
-              },
-            ),
-            IconButton(
               icon: const Icon(Icons.settings),
               tooltip: 'Settings',
-              onPressed: _showSettings,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
             ),
             if (chats.isNotEmpty)
               IconButton(
