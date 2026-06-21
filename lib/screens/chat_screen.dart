@@ -27,6 +27,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   bool _loading = true;
   String _search = '';
+  bool _showSearch = false;
 
   @override
   void initState() {
@@ -93,20 +94,24 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildDateSeparator(DateTime date) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 10),
+      margin: const EdgeInsets.symmetric(vertical: 12),
       alignment: Alignment.center,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white12
-              : Colors.black12,
-          borderRadius: BorderRadius.circular(10),
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           _formatDateHeader(date),
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurfaceVariant,
+            letterSpacing: 0.3,
+          ),
         ),
       ),
     );
@@ -236,6 +241,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leadingWidth: 56,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: CircleAvatar(
+            radius: 18,
+            backgroundColor: widget.chat.isGroup
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Theme.of(context).colorScheme.secondaryContainer,
+            child: Icon(
+              widget.chat.isGroup ? Icons.group : Icons.person,
+              color: widget.chat.isGroup
+                  ? Theme.of(context).colorScheme.onPrimaryContainer
+                  : Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 20,
+            ),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -250,6 +272,20 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(_showSearch ? Icons.search_off : Icons.search),
+            tooltip: _showSearch ? 'Hide search' : 'Search in chat',
+            onPressed: () {
+              setState(() {
+                _showSearch = !_showSearch;
+                if (!_showSearch) {
+                  _searchCtrl.clear();
+                  _search = '';
+                  _applyFilter();
+                }
+              });
+            },
+          ),
           if (!widget.chat.isGroup)
             IconButton(
               icon: const Icon(Icons.person_outline),
@@ -257,7 +293,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onPressed: _changePerspective,
             ),
           IconButton(
-            icon: const Icon(Icons.photo_library),
+            icon: const Icon(Icons.photo_library_rounded),
             tooltip: 'View all media',
             onPressed: _openMediaGallery,
           ),
@@ -265,28 +301,30 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // Search bar mimicking WA style
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: 'Search in chat...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _search.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                isDense: true,
-                filled: true,
+          if (_showSearch)
+            // Search bar - shown only when search icon is tapped
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: TextField(
+                controller: _searchCtrl,
+                style: const TextStyle(fontSize: 15),
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search in chat...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                          },
+                        )
+                      : null,
+                  isDense: true,
+                  filled: true,
+                ),
               ),
             ),
-          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -297,9 +335,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             : 'No matches for "$_search"'),
                       )
                     : Container(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF0B141A)
-                            : const Color(0xFFECE5DD),
+                        color: Theme.of(context).colorScheme.surface,
                         child: ListView.builder(
                           reverse: true,
                           padding: const EdgeInsets.only(top: 8, bottom: 12),
@@ -426,35 +462,49 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
         builder: (_) => Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
-            backgroundColor: Colors.black87,
+            backgroundColor: Colors.transparent,
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
-            title: const Text('Preview', style: TextStyle(color: Colors.white)),
+            title: const Text('Preview', style: TextStyle(color: Colors.white70, fontSize: 16)),
           ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.6,
-              maxScale: 5.0,
-              child: Image.file(
-                File(path),
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image, color: Colors.white70, size: 80),
+          body: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 6.0,
+                  child: Image.file(
+                    File(path),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image, color: Colors.white38, size: 80),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          bottomNavigationBar: (caption.isNotEmpty)
-              ? Container(
-                  color: Colors.black87,
-                  padding: const EdgeInsets.all(14),
-                  child: Text(
-                    caption,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                    textAlign: TextAlign.center,
+              if (caption.isNotEmpty)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black87],
+                      ),
+                    ),
+                    child: Text(
+                      caption,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.3),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                )
-              : null,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -466,11 +516,15 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
+            Icon(Icons.photo_library_outlined, size: 56, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 16),
             Text(
-              'Nothing here',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+              'No items',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -478,11 +532,11 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
         childAspectRatio: 1.0,
       ),
       itemCount: list.length,
@@ -498,8 +552,8 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
             File(fullPath),
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              color: Colors.grey.shade200,
-              child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              child: Icon(Icons.broken_image, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           );
         } else if (msg.type == MessageType.video) {
@@ -510,26 +564,24 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
           );
         } else {
           preview = Container(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF1F2C34)
-                : Colors.grey.shade100,
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   _getIconForType(msg.type),
-                  size: 46,
+                  size: 42,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
                     filename,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11),
+                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ),
               ],
@@ -539,58 +591,71 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
 
         return GestureDetector(
           onTap: () => _openItem(msg),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                preview,
-                // Catchy bottom overlay for caption / name
-                if (displayText.isNotEmpty)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [Colors.black87, Colors.transparent],
-                        ),
-                      ),
-                      child: Text(
-                        displayText,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                // Small type badge top-right for non-photos
-                if (msg.type != MessageType.image)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        _getIconForType(msg.type),
-                        size: 13,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Theme.of(context).shadowColor.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
               ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  preview,
+                  // Catchy bottom overlay for caption / name
+                  if (displayText.isNotEmpty)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [Colors.black87, Colors.transparent],
+                          ),
+                        ),
+                        child: Text(
+                          displayText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            height: 1.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  // Small type badge top-right for non-photos
+                  if (msg.type != MessageType.image)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          _getIconForType(msg.type),
+                          size: 13,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );

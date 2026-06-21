@@ -8,6 +8,7 @@ import '../models/chat.dart';
 import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
+import '../services/theme_service.dart';
 import '../widgets/self_chooser_dialog.dart';
 import 'chat_screen.dart';
 import 'my_usernames_screen.dart';
@@ -21,6 +22,8 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   bool _importing = false;
+  bool _isSearching = false;
+  String _searchQuery = '';
 
   Future<void> _importChat(BuildContext context) async {
     setState(() => _importing = true);
@@ -230,6 +233,62 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  void _showSettings() {
+    final themeService = context.read<ThemeService>();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Theme'),
+            const SizedBox(height: 8),
+            RadioListTile<ThemeMode>(
+              title: const Text('System default'),
+              value: ThemeMode.system,
+              groupValue: themeService.themeMode,
+              onChanged: (mode) {
+                if (mode != null) {
+                  themeService.setThemeMode(mode);
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Light'),
+              value: ThemeMode.light,
+              groupValue: themeService.themeMode,
+              onChanged: (mode) {
+                if (mode != null) {
+                  themeService.setThemeMode(mode);
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Dark'),
+              value: ThemeMode.dark,
+              groupValue: themeService.themeMode,
+              onChanged: (mode) {
+                if (mode != null) {
+                  themeService.setThemeMode(mode);
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _deleteChat(Chat chat) async {
     final repo = context.read<ChatRepository>();
     final confirm = await showDialog<bool>(
@@ -260,30 +319,78 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final repo = context.watch<ChatRepository>();
     final chats = repo.chats;
 
+    final filteredChats = _searchQuery.isEmpty
+        ? chats
+        : chats.where((chat) {
+            final q = _searchQuery.toLowerCase();
+            return chat.title.toLowerCase().contains(q) ||
+                (chat.lastMessagePreview ?? '').toLowerCase().contains(q);
+          }).toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('cbbackup'),
+        title: _isSearching
+            ? TextField(
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search chats...',
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                },
+              )
+            : const Text('cbbackup'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.manage_accounts),
-            tooltip: 'Manage my usernames (for default perspective)',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MyUsernamesScreen()),
-              );
-            },
-          ),
-          if (chats.isNotEmpty)
+          if (_isSearching)
             IconButton(
-              tooltip: 'Delete all',
-              icon: const Icon(Icons.delete_sweep),
-              onPressed: () async {
-                for (final c in [...chats]) {
-                  await context.read<ChatRepository>().deleteChat(c);
-                }
-                setState(() {});
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _isSearching = false;
+                  _searchQuery = '';
+                });
+              },
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Search chats',
+              onPressed: () {
+                setState(() {
+                  _isSearching = true;
+                  _searchQuery = '';
+                });
               },
             ),
+            IconButton(
+              icon: const Icon(Icons.manage_accounts),
+              tooltip: 'Manage my usernames',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MyUsernamesScreen()),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: _showSettings,
+            ),
+            if (chats.isNotEmpty)
+              IconButton(
+                tooltip: 'Delete all chats',
+                icon: const Icon(Icons.delete_sweep),
+                onPressed: () async {
+                  for (final c in [...chats]) {
+                    await context.read<ChatRepository>().deleteChat(c);
+                  }
+                  setState(() {});
+                },
+              ),
+          ],
         ],
       ),
       body: chats.isEmpty
@@ -291,57 +398,124 @@ class _ChatListScreenState extends State<ChatListScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.chat_outlined, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('No chats yet', style: TextStyle(fontSize: 18)),
-                  const SizedBox(height: 8),
-                  const Text('Import a WhatsApp chat export (.zip)'),
-                  const SizedBox(height: 24),
+                  Icon(Icons.chat_outlined, size: 72, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 20),
+                  const Text('No chats yet', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Import a WhatsApp chat export (.zip)',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 28),
                   FilledButton.icon(
                     onPressed: _importing ? null : () => _importChat(context),
                     icon: const Icon(Icons.upload_file),
                     label: const Text('Import chat zip'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    ),
                   ),
                 ],
               ),
             )
-          : ListView.separated(
-              itemCount: chats.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+          : ListView.builder(
+              itemCount: filteredChats.length,
+              padding: const EdgeInsets.only(top: 8, bottom: 80),
               itemBuilder: (context, index) {
-                final chat = chats[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: chat.isGroup
-                        ? Colors.teal.shade200
-                        : Colors.indigo.shade200,
-                    child: Icon(
-                      chat.isGroup ? Icons.group : Icons.person,
-                      color: Colors.white,
+                final chat = filteredChats[index];
+                final preview = (chat.lastMessagePreview ?? '').trim().isNotEmpty
+                    ? chat.lastMessagePreview!
+                    : '${chat.messageCount} messages';
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+                        );
+                      },
+                      onLongPress: () => _deleteChat(chat),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 26,
+                              backgroundColor: chat.isGroup
+                                  ? Theme.of(context).colorScheme.primaryContainer
+                                  : Theme.of(context).colorScheme.secondaryContainer,
+                              child: Icon(
+                                chat.isGroup ? Icons.group : Icons.person,
+                                color: chat.isGroup
+                                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                                    : Theme.of(context).colorScheme.onSecondaryContainer,
+                                size: 26,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    chat.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    preview,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _formatDate(chat.importDate),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
+                            const SizedBox(width: 4),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, size: 18),
+                              onSelected: (value) {
+                                if (value == 'delete') {
+                                  _deleteChat(chat);
+                                }
+                              },
+                              itemBuilder: (c) => [
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, color: Colors.red, size: 20),
+                                      SizedBox(width: 8),
+                                      Text('Delete chat'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  title: Text(
-                    chat.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    (chat.lastMessagePreview ?? '').trim().isNotEmpty
-                        ? chat.lastMessagePreview!
-                        : '${chat.messageCount} messages',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: Text(
-                    _formatDate(chat.importDate),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
-                    );
-                  },
-                  onLongPress: () => _deleteChat(chat),
                 );
               },
             ),

@@ -50,27 +50,26 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    // WhatsApp-like colors
+    // Material Design 3 consistent colors
     final Color bubbleColor = isSelf
-        ? (isDark ? const Color(0xFF005C4B) : const Color(0xFFDCF8C6))
-        : (isDark ? const Color(0xFF1F2C34) : Colors.white);
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.surfaceContainerHigh;
 
     final Color textColor = isSelf
-        ? (isDark ? Colors.white : Colors.black87)
-        : (isDark ? Colors.white : Colors.black87);
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurface;
 
     final Color timeColor = isSelf
-        ? (isDark ? Colors.white70 : Colors.black54)
-        : (isDark ? Colors.white70 : Colors.black54);
+        ? theme.colorScheme.onPrimaryContainer.withOpacity(0.7)
+        : theme.colorScheme.onSurfaceVariant;
 
     final align = isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final radius = BorderRadius.only(
-      topLeft: const Radius.circular(18),
-      topRight: const Radius.circular(18),
-      bottomLeft: Radius.circular(isSelf ? 18 : 4),
-      bottomRight: Radius.circular(isSelf ? 4 : 18),
+      topLeft: const Radius.circular(20),
+      topRight: const Radius.circular(20),
+      bottomLeft: Radius.circular(isSelf ? 20 : 5),
+      bottomRight: Radius.circular(isSelf ? 5 : 20),
     );
 
     Widget content;
@@ -80,15 +79,18 @@ class MessageBubble extends StatelessWidget {
     if (message.type == MessageType.system) {
       return Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          margin: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1F2C34) : Colors.white70,
+            color: theme.colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             message.text,
-            style: theme.textTheme.bodySmall?.copyWith(color: timeColor),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: timeColor,
+              fontWeight: FontWeight.w500,
+            ),
             textAlign: TextAlign.center,
           ),
         ),
@@ -105,11 +107,16 @@ class MessageBubble extends StatelessWidget {
             children: [
               if (message.text.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(message.text, style: TextStyle(color: textColor, fontSize: 14), maxLines: 4, overflow: TextOverflow.ellipsis),
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    message.text,
+                    style: TextStyle(color: textColor, fontSize: 14, height: 1.25),
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 child: Image.file(
                   file,
                   width: 220,
@@ -117,7 +124,7 @@ class MessageBubble extends StatelessWidget {
                   errorBuilder: (_, __, ___) => Container(
                     width: 220,
                     height: 140,
-                    color: Colors.grey.shade300,
+                    color: theme.colorScheme.surfaceContainerHigh,
                     alignment: Alignment.center,
                     child: const Icon(Icons.broken_image, size: 40),
                   ),
@@ -134,8 +141,13 @@ class MessageBubble extends StatelessWidget {
             children: [
               if (message.text.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(message.text, style: TextStyle(color: textColor, fontSize: 14), maxLines: 4, overflow: TextOverflow.ellipsis),
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    message.text,
+                    style: TextStyle(color: textColor, fontSize: 14, height: 1.25),
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               VideoThumbnailWidget(
                 path: mediaFullPath!,
@@ -151,10 +163,12 @@ class MessageBubble extends StatelessWidget {
         content = GestureDetector(
           onTap: () => _openMedia(context),
           child: Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isSelf ? Colors.black12 : Colors.black.withOpacity(0.03),
-              borderRadius: BorderRadius.circular(8),
+              color: isSelf 
+                  ? theme.colorScheme.onPrimaryContainer.withOpacity(0.12)
+                  : theme.colorScheme.onSurface.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -173,7 +187,7 @@ class MessageBubble extends StatelessWidget {
                       if (message.text.isNotEmpty)
                         Text(
                           message.text,
-                          style: TextStyle(color: textColor, fontSize: 14),
+                          style: TextStyle(color: textColor, fontSize: 14, height: 1.25),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -198,7 +212,7 @@ class MessageBubble extends StatelessWidget {
     } else {
       content = Text(
         message.text,
-        style: TextStyle(color: textColor, height: 1.3, fontSize: 15),
+        style: TextStyle(color: textColor, height: 1.35, fontSize: 15),
       );
     }
 
@@ -208,7 +222,7 @@ class MessageBubble extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         content,
-        const SizedBox(height: 4),
+        const SizedBox(height: 3),
         Align(
           alignment: Alignment.centerRight,
           child: Row(
@@ -219,15 +233,16 @@ class MessageBubble extends StatelessWidget {
                 style: TextStyle(
                   color: timeColor,
                   fontSize: 10,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               if (message.isEdited)
                 Padding(
-                  padding: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.only(left: 5),
                   child: Text(
                     'edited',
                     style: TextStyle(
-                      color: timeColor,
+                      color: timeColor.withOpacity(0.85),
                       fontSize: 9,
                       fontStyle: FontStyle.italic,
                     ),
@@ -262,15 +277,13 @@ class MessageBubble extends StatelessWidget {
             decoration: BoxDecoration(
               color: bubbleColor,
               borderRadius: radius,
-              boxShadow: isDark
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 1,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+              boxShadow: [
+                BoxShadow(
+                  color: theme.shadowColor.withOpacity(0.1),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
             child: bubbleContent,
           ),

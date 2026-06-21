@@ -139,6 +139,24 @@ sample/
 
 ## Recent Changes
 
+### 2026-06-21 - Major UI polish & modern chat experience (inspired by Neumorphism dark chat designs)
+- Refined overall look for a more premium, modern, "catchy" chat UI while staying faithful to WhatsApp.
+- **Theme**: Enhanced Material 3 with rounded CardTheme (16px), pill-shaped input fields, nicer AppBar.
+- **Home / Chat list**:
+  - Replaced plain ListTiles + dividers with modern Card-based rows (rounded, subtle shadows, generous padding).
+  - Larger, styled avatars. Better typography hierarchy (bold title, muted subtitle).
+  - Improved empty state with larger icon and clearer text.
+- **Chat header**: Added leading avatar (group/person) for visual polish and quick recognition. Nicer action icons.
+- **Search bar**: Cleaner pill style leveraging theme.
+- **Message bubbles**:
+  - Increased corner radii (20px) for softer modern look.
+  - Added tasteful box shadows for depth and lift (subtle in light, stronger in dark).
+  - Polished captions, timestamps, "edited", file rows, media containers.
+- **Date separators & system messages**: Softer backgrounds, better padding, slight shadows.
+- **Media gallery**: Added depth shadows to grid tiles, refined empty states, improved full-screen image viewer (transparent appbar, gradient caption, wider zoom range).
+- **General**: Better spacing, font weights, line heights, consistent 14-20px rounding, modern icon usage.
+- Keeps excellent WA bubble colors, alignment, and media fidelity.
+
 ### 2026-06-21 - Chat list preview now shows media last messages correctly (no longer blank)
 - Fixed bug where home screen (chat list) subtitle was blank (or fell back to message count) when the most recent message in a chat was a media item (photo/video/audio/doc) without a text caption.
 - Root cause: WhatsApp exports often prefix attachment tags with LRM (\u200E) direction mark; pure media messages ended up with non-empty but invisible `.text` containing only LRM. `buildPreview` took the "has caption" branch producing "Sender: " (blank-looking).
