@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.xharma.cbbackup.cbbackup"
-    compileSdk = flutter.compileSdkVersion
+    // Bumped to 36 because file_picker + flutter_plugin_android_lifecycle now require it
+    compileSdk = maxOf(flutter.compileSdkVersion, 36)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -20,7 +21,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = maxOf(flutter.targetSdkVersion, 36)   // keep targetSdk reasonable
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

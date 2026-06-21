@@ -1,17 +1,27 @@
 # cbbackup
 
-A new Flutter project.
+A modern Flutter app to import, view, and search your WhatsApp chat exports (.zip).
 
-## Getting Started
+## Features
+- Import standard WhatsApp chat export zips (individual or group)
+- WhatsApp-style chat viewer with aligned bubbles + inline media (images)
+- Search within a chat
+- Correct "me" identification with support for multiple name aliases + prompt
+- Persisted chats + demo sample loader
+- Clean Material 3 UI (Android + iOS)
 
-This project is a starting point for a Flutter application.
+## Usage
+1. Run the app.
+2. Tap **Import chat zip** or **Load sample demo**.
+3. If your name isn't known, pick it from the prompt so your messages appear on the right.
+4. Tap any chat to open the viewer. Use the search bar at the top.
 
-A few resources to get you started if this is your first Flutter project:
+Sample data is provided in `sample/WhatsApp Chat - Rashmi Arya.zip`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Development
+```bash
+flutter pub get
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+See the plan for implementation details.
