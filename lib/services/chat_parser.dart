@@ -1,11 +1,22 @@
-import 'package:intl/intl.dart';
-
 import '../models/chat.dart';
 
 final _lrm = '\u200E';
 
 final _timestampRe = RegExp(
-  '^' + _lrm + r'?\[(\d{2}/\d{2}/\d{2}),\s*(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s*(.+?):\s*(.*)$',
+  r'^\u200E?\s*\[(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\]?\s*([^:]+):\s*(.*)$',
+  caseSensitive: false,
+);
+
+// Fallback regex for Android exports that may have slight variations (no space after ], different spacing, etc.)
+final _timestampReFallback = RegExp(
+  r'^\u200E?\s*\[(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\]?\s*([^:]+):\s*(.*)$',
+  caseSensitive: false,
+);
+
+// Android "dash" format without brackets: DD/MM/YY, h:mm pm - [Sender: ] text
+// Supports system lines without sender (e.g. "date, time - You were added")
+final _timestampReDash = RegExp(
+  r'^(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*[ap]m?)\s*-\s*(?:(.+?):\s*)?(.*)$',
   caseSensitive: false,
 );
 
@@ -44,9 +55,9 @@ final _timestampRe = RegExp(
   return (text: text.trim(), isEdited: false);
 }
 
-final _dateFormat = DateFormat('dd/MM/yy, h:mm:ss a');
 
-/// Parses raw WhatsApp _chat.txt content into messages.
+
+/// Parses raw WhatsApp chat log content into messages (supports both iOS and Android export formats).
 /// [myAliases] are used only for caller-side isSelf computation (parser stays neutral).
 List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const []}) {
   // Normalize line endings (the txt from zip may have \r\n on some systems)
@@ -57,26 +68,70 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
   ChatMessage? current;
 
   for (final rawLine in lines) {
-    final line = rawLine.trimRight();
-    if (line.trim().isEmpty) continue;
+    final line = rawLine.trim();
+    if (line.isEmpty) continue;
 
-    final match = _timestampRe.firstMatch(line);
+    // Try bracket format first, then fallback, then Android dash format (no brackets)
+    var match = _timestampRe.firstMatch(line);
+    if (match == null) {
+      match = _timestampReFallback.firstMatch(line);
+    }
+    if (match == null) {
+      match = _timestampReDash.firstMatch(line);
+    }
+
     if (match != null) {
       final datePart = match.group(1)!;
       final timePart = match.group(2)!;
-      final sender = match.group(3)!.trim();
+      String sender = (match.group(3) ?? '').trim();
       String text = (match.group(4) ?? '').replaceAll(_lrm, '');
 
-      DateTime ts;
-      try {
-        ts = _dateFormat.parse('$datePart, $timePart', true).toLocal();
-      } catch (_) {
-        final cleaned = '$datePart, ${timePart.replaceAll('\u202f', ' ')}';
-        try {
-          ts = _dateFormat.parse(cleaned, true).toLocal();
-        } catch (_) {
-          ts = DateTime.now();
+      // For dash format without sender (system lines like "date, time - You were added")
+      bool isDashNoSender = false;
+      if (sender.isEmpty && text.isNotEmpty) {
+        if (match.group(3) == null) {
+          sender = 'System';
+          isDashNoSender = true;
         }
+      }
+
+      // Always initialize. The many formats below support Android (24h, direct filenames) + iOS (12h, <attached:>).
+      // If no format matches we fall back so parsing doesn't crash on a weird line.
+      // Robust manual parsing that handles both Android (24h) and iOS (12h) formats,
+      // with or without seconds, and DD/MM or MM/DD date order.
+      DateTime ts = DateTime.now();
+      try {
+        final dateParts = datePart.split('/');
+        int d = int.parse(dateParts[0]);
+        int m = int.parse(dateParts[1]);
+        int y = 2000 + int.parse(dateParts[2]);
+
+        // Handle possible MM/DD/YY (swap if month > 12)
+        if (m > 12 && d <= 12) {
+          final tmp = d; d = m; m = tmp;
+        }
+
+        String t = timePart.replaceAll('\u202f', ' ').trim();
+        bool isPM = false;
+        bool hasAmPm = t.toUpperCase().endsWith('PM') || t.toUpperCase().endsWith('AM');
+        if (t.toUpperCase().endsWith('PM')) {
+          isPM = true;
+          t = t.substring(0, t.length - 2).trim();
+        } else if (t.toUpperCase().endsWith('AM')) {
+          t = t.substring(0, t.length - 2).trim();
+        }
+
+        final timeParts = t.split(':');
+        int h = int.parse(timeParts[0]);
+        int min = timeParts.length > 1 ? int.parse(timeParts[1]) : 0;
+        int sec = timeParts.length > 2 ? int.parse(timeParts[2]) : 0;
+
+        if (isPM && h < 12) h += 12;
+        if (!isPM && h == 12 && hasAmPm) h = 0; // 12 AM only if AM/PM was present
+
+        ts = DateTime(y, m, d, h, min, sec);
+      } catch (_) {
+        // keep the fallback DateTime.now()
       }
 
       // Check for attachment on this line (using robust helper)
@@ -87,7 +142,25 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
 
       if (media != null) {
         type = getMediaTypeFromFilename(media);
-      } else if (sender.toLowerCase().contains('end-to-end') || text.toLowerCase().contains('encrypted')) {
+      } else {
+        final potentialMedia = finalText.trim();
+        // Android WhatsApp export often references media directly as the "text" part
+        // e.g. "IMG-20250616-WA0001.jpg" instead of "<attached: IMG-...>"
+        // Also catches other filename-only media lines
+        if (potentialMedia.contains('.') &&
+            potentialMedia.split('.').last.length <= 5 && // plausible extension
+            potentialMedia.length > 4 &&
+            potentialMedia.length < 120) {
+          // Android style: the line content is just the media filename (no <attached: tag)
+          media = potentialMedia;
+          type = getMediaTypeFromFilename(media);
+          finalText = '';
+        } else if (sender.toLowerCase().contains('end-to-end') || text.toLowerCase().contains('encrypted')) {
+          type = MessageType.system;
+        }
+      }
+
+      if (isDashNoSender) {
         type = MessageType.system;
       }
 
@@ -157,20 +230,38 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
             isEdited: stripped.isEdited || current.isEdited,
           );
         } else {
-          // Regular text continuation
-          final combined = current.text.isEmpty
-              ? cont
-              : '${current.text}\n$cont';
-          final stripped = _stripEditedMarker(combined);
+          // Regular text continuation, or Android direct media filename on next line
+          final potential = cont.trim();
+          if (potential.contains('.') &&
+              potential.split('.').last.length <= 5 &&
+              potential.length > 4 &&
+              potential.length < 120) {
+            // Android: filename on continuation line
+            final newMedia = potential;
+            final newType = getMediaTypeFromFilename(newMedia);
+            current = ChatMessage(
+              timestamp: current.timestamp,
+              sender: current.sender,
+              text: current.text,
+              mediaPath: newMedia,
+              type: newType,
+              isEdited: current.isEdited,
+            );
+          } else {
+            final combined = current.text.isEmpty
+                ? cont
+                : '${current.text}\n$cont';
+            final stripped = _stripEditedMarker(combined);
 
-          current = ChatMessage(
-            timestamp: current.timestamp,
-            sender: current.sender,
-            text: stripped.text,
-            mediaPath: current.mediaPath,
-            type: current.type,
-            isEdited: stripped.isEdited || current.isEdited,
-          );
+            current = ChatMessage(
+              timestamp: current.timestamp,
+              sender: current.sender,
+              text: stripped.text,
+              mediaPath: current.mediaPath,
+              type: current.type,
+              isEdited: stripped.isEdited || current.isEdited,
+            );
+          }
         }
       }
     } else {
@@ -237,10 +328,11 @@ String buildPreview(List<ChatMessage> messages) {
 }
 
 /// Parses the contact or group name from a standard WhatsApp export zip filename.
-/// 
-/// Expected format (matching sample "WhatsApp Chat - Rashmi Arya.zip"):
+///
+/// Supports both common Android and iOS export formats:
 ///   "WhatsApp Chat - <Name>.zip"
-/// 
+///   "WhatsApp Chat with <Name>.zip"
+///
 /// Returns the extracted name (e.g. "Rashmi Arya" or "Family Group").
 /// Throws a descriptive error if the filename does not follow the expected format.
 String parseChatTitleFromZipFilename(String filePath) {
@@ -251,18 +343,20 @@ String parseChatTitleFromZipFilename(String filePath) {
     name = name.substring(0, name.length - 4);
   }
 
-  const prefix = 'WhatsApp Chat - ';
+  // Match either " - " or " with " after "WhatsApp Chat" (case insensitive)
+  final prefixMatch = RegExp(r'^WhatsApp Chat (?:- |with )', caseSensitive: false).firstMatch(name);
 
-  if (!name.toLowerCase().startsWith(prefix.toLowerCase())) {
+  if (prefixMatch == null) {
     throw Exception(
       'Invalid zip filename format.\n'
-      'WhatsApp chat exports must be named like:\n'
-      '  "WhatsApp Chat - Rashmi Arya.zip"\n\n'
+      'WhatsApp chat exports must be named like one of:\n'
+      '  "WhatsApp Chat - Rashmi Arya.zip"\n'
+      '  "WhatsApp Chat with Congob KYC Techops.zip"\n\n'
       'Got: "$name.zip"',
     );
   }
 
-  final title = name.substring(prefix.length).trim();
+  final title = name.substring(prefixMatch.end).trim();
 
   if (title.isEmpty) {
     throw Exception('Could not extract contact or group name from the zip filename.');

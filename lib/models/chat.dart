@@ -74,7 +74,7 @@ class Chat {
   final bool isGroup;
   final List<String> participants;
   final DateTime importDate;
-  final String extractedDir; // path to folder containing the extracted files + _chat.txt
+  final String extractedDir; // path to folder containing the extracted files + chat log .txt (name may vary by platform)
   final int messageCount;
   final String? lastMessagePreview;
 

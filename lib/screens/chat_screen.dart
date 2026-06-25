@@ -557,10 +557,29 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
             ),
           );
         } else if (msg.type == MessageType.video) {
-          preview = VideoThumbnailWidget(
-            path: fullPath,
-            width: 140,
-            height: 140,
+          preview = Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _getIconForType(msg.type),
+                  size: 42,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    filename,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
           );
         } else {
           preview = Container(

@@ -44,3 +44,6 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// JVM target consistency is handled globally in android/build.gradle.kts
+// (this ensures receive_sharing_intent and other plugins use the same target as the app)

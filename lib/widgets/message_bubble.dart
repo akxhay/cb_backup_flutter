@@ -1,9 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/chat.dart';
 
@@ -134,27 +132,54 @@ class MessageBubble extends StatelessWidget {
           ),
         );
       } else if (message.type == MessageType.video) {
+        // Videos show icon + filename (no thumbnail)
+        final filename = message.mediaPath!.split(RegExp(r'[/\\]')).last;
         content = GestureDetector(
           onTap: () => _openMedia(context),
-          child: Column(
-            crossAxisAlignment: align,
-            children: [
-              if (message.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Text(
-                    message.text,
-                    style: TextStyle(color: textColor, fontSize: 14, height: 1.25),
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isSelf 
+                  ? theme.colorScheme.onPrimaryContainer.withOpacity(0.12)
+                  : theme.colorScheme.onSurface.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _getMediaIcon(message.type),
+                  color: textColor.withOpacity(0.9),
+                  size: 32,
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (message.text.isNotEmpty)
+                        Text(
+                          message.text,
+                          style: TextStyle(color: textColor, fontSize: 14, height: 1.25),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (message.text.isNotEmpty) const SizedBox(height: 2),
+                      Text(
+                        filename,
+                        style: TextStyle(
+                          color: textColor.withOpacity(0.75),
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-              VideoThumbnailWidget(
-                path: mediaFullPath!,
-                width: 220,
-                height: 140,
-              ),
-            ],
+              ],
+            ),
           ),
         );
       } else {
@@ -292,125 +317,4 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-}
-
-/// Stateful video thumbnail widget.
-/// The thumbnail is generated only when this widget is built (i.e. comes on-screen
-/// in a ListView or GridView). The bitmap is released in dispose() when the
-/// widget is scrolled off-screen. This keeps memory and CPU usage low for long chats.
-class VideoThumbnailWidget extends StatefulWidget {
-  final String path;
-  final double width;
-  final double height;
-
-  const VideoThumbnailWidget({
-    required this.path,
-    required this.width,
-    required this.height,
-  });
-
-  @override
-  State<VideoThumbnailWidget> createState() => _VideoThumbnailState();
-}
-
-class _VideoThumbnailState extends State<VideoThumbnailWidget> {
-  Uint8List? _thumbnailBytes;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _generateThumbnail();
-  }
-
-  Future<void> _generateThumbnail() async {
-    try {
-      final bytes = await VideoThumbnail.thumbnailData(
-        video: widget.path,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: widget.width.toInt(),
-        quality: 55,
-      );
-      if (mounted) {
-        setState(() {
-          _thumbnailBytes = bytes;
-          _isLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    // Release reference so GC can reclaim memory when off-screen
-    _thumbnailBytes = null;
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    Widget thumbnailWidget;
-
-    if (_isLoading) {
-      thumbnailWidget = Container(
-        width: widget.width,
-        height: widget.height,
-        color: Colors.black26,
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      );
-    } else if (_thumbnailBytes != null) {
-      thumbnailWidget = Image.memory(
-        _thumbnailBytes!,
-        width: widget.width,
-        height: widget.height,
-        fit: BoxFit.cover,
-      );
-    } else {
-      thumbnailWidget = Container(
-        width: widget.width,
-        height: widget.height,
-        color: Colors.black26,
-        child: const Center(
-          child: Icon(Icons.videocam, size: 42, color: Colors.white70),
-        ),
-      );
-    }
-
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: thumbnailWidget,
-        ),
-        Container(
-          decoration: const BoxDecoration(
-            color: Colors.black54,
-            shape: BoxShape.circle,
-          ),
-          padding: const EdgeInsets.all(10),
-          child: const Icon(
-            Icons.play_arrow_rounded,
-            color: Colors.white,
-            size: 30,
-          ),
-        ),
-      ],
-    );
-  }
 }

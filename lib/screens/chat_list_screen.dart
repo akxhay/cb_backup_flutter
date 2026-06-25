@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
@@ -28,6 +29,27 @@ class _ChatListScreenState extends State<ChatListScreen> {
   List<Chat> _searchResults = [];
   bool _isLoadingSearch = false;
   Timer? _searchDebounce;
+
+  late StreamSubscription _intentSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Listen for shared files while app is running
+    _intentSubscription = ReceiveSharingIntent.instance.getMediaStream().listen((sharedFiles) {
+      _handleSharedFiles(sharedFiles);
+    }, onError: (err) {
+      debugPrint("getMediaStream error: $err");
+    });
+
+    // Get shared files when app is opened from share
+    ReceiveSharingIntent.instance.getInitialMedia().then((sharedFiles) {
+      _handleSharedFiles(sharedFiles);
+      // Important: reset so it doesn't trigger again
+      ReceiveSharingIntent.instance.reset();
+    });
+  }
 
   Future<void> _importChat(BuildContext context) async {
     setState(() => _importing = true);
@@ -286,10 +308,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final q = query.toLowerCase().trim();
     final List<Chat> results = [];
 
-    // Fast filter: title or last message preview
+    // Fast filter: title or last message preview or any sender (participant)
     for (final chat in allChats) {
       if (chat.title.toLowerCase().contains(q) ||
-          (chat.lastMessagePreview ?? '').toLowerCase().contains(q)) {
+          (chat.lastMessagePreview ?? '').toLowerCase().contains(q) ||
+          chat.participants.any((p) => p.toLowerCase().contains(q))) {
         results.add(chat);
       }
     }
@@ -314,12 +337,152 @@ class _ChatListScreenState extends State<ChatListScreen> {
       results.addAll(messageMatches.whereType<Chat>());
     }
 
+    // Remove duplicates (in case a chat matched both fast and content)
+    final seen = <String>{};
+    final finalResults = <Chat>[];
+    for (final c in results) {
+      if (seen.add(c.id)) finalResults.add(c);
+    }
+
     if (!mounted) return;
 
     setState(() {
-      _searchResults = results;
+      _searchResults = finalResults;
       _isLoadingSearch = false;
     });
+  }
+
+  void _handleSharedFiles(List<SharedMediaFile> sharedFiles) {
+    if (sharedFiles.isEmpty) return;
+
+    final file = sharedFiles.first;
+    String? path = file.path;
+
+    // Handle content URIs on Android
+    if (path != null && path.toLowerCase().endsWith('.zip')) {
+      final sharedFile = File(path);
+      // Use a post frame callback so context is available and UI is ready
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _importSharedZip(sharedFile);
+        }
+      });
+    }
+  }
+
+  Future<void> _importSharedZip(File zipFile) async {
+    if (_importing) return;
+    setState(() => _importing = true);
+
+    try {
+      final repo = context.read<ChatRepository>();
+
+      // Reuse similar logic as _importChat but without picker
+      String? prospectiveTitle;
+      try {
+        prospectiveTitle = parseChatTitleFromZipFilename(zipFile.path);
+      } catch (_) {}
+
+      List<Chat> variants = [];
+      String baseTitle = '';
+      if (prospectiveTitle != null) {
+        baseTitle = extractBaseChatTitle(prospectiveTitle);
+        final l = baseTitle.toLowerCase().trim();
+        variants = repo.chats
+            .where((c) => extractBaseChatTitle(c.title).toLowerCase().trim() == l)
+            .toList();
+      }
+
+      Chat? mergeTarget;
+      String? newLabeledTitle;
+
+      if (variants.isNotEmpty) {
+        // Show merge/new dialog (same as before)
+        final options = <Map<String, dynamic>>[];
+        for (final v in variants) {
+          options.add({'type': 'merge', 'chat': v, 'label': v.title});
+        }
+
+        int maxLabel = 1;
+        for (final v in variants) {
+          final num = extractLabelNumber(v.title);
+          if (num > maxLabel) maxLabel = num;
+        }
+        final nextLabel = maxLabel + 1;
+        final importNewLabel = '$baseTitle ($nextLabel)';
+        options.add({'type': 'new', 'label': importNewLabel});
+
+        final choice = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Chat already exists'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('A chat for "$baseTitle" already exists.'),
+                const SizedBox(height: 12),
+                const Text('Choose action:'),
+                const SizedBox(height: 8),
+                ...options.map((opt) {
+                  return ListTile(
+                    title: Text(opt['label']),
+                    onTap: () => Navigator.pop(ctx, opt),
+                    leading: Icon(
+                      opt['type'] == 'merge' ? Icons.merge_type : Icons.add,
+                    ),
+                  );
+                }).toList(),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        if (choice == null) {
+          setState(() => _importing = false);
+          return;
+        }
+
+        if (choice['type'] == 'merge') {
+          mergeTarget = choice['chat'] as Chat;
+        } else {
+          newLabeledTitle = choice['label'] as String;
+        }
+      }
+
+      if (mergeTarget != null) {
+        await repo.mergeIntoChat(mergeTarget, zipFile);
+      } else {
+        await repo.importZip(zipFile, forceTitle: newLabeledTitle);
+      }
+
+      // Handle self prompt
+      Chat? theChat;
+      if (mergeTarget != null) {
+        theChat = mergeTarget;
+      } else if (repo.chats.isNotEmpty) {
+        theChat = repo.chats.first;
+      }
+      if (theChat != null && mounted) {
+        await _maybePromptForSelf(context, theChat);
+      }
+
+      setState(() {});
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import from share failed: $msg')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
   }
 
   @override
@@ -564,6 +727,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   void dispose() {
+    _intentSubscription.cancel();
     _searchDebounce?.cancel();
     super.dispose();
   }

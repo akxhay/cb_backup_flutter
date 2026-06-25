@@ -37,6 +37,32 @@ void main() {
       expect(multi.text, contains('Address'));
     });
 
+    test('parses Android 24h format and direct media filename', () {
+      const androidChat = '''
+[16/06/25, 14:30:45] Congob: Hello there
+[16/06/25, 14:31:10] You: IMG-20250616-WA0001.jpg
+[16/06/25, 14:31:12] Congob: Check this video
+[16/06/25, 14:32:00] You: VID-20250616-WA0002.mp4
+''';
+      final msgs = parseChat(androidChat);
+      expect(msgs.length, greaterThanOrEqualTo(4));
+
+      final img = msgs.firstWhere((m) => m.mediaPath != null && m.mediaPath!.contains('IMG'));
+      expect(img.type, MessageType.image);
+      expect(img.sender, 'You');
+
+      final vid = msgs.firstWhere((m) => m.mediaPath != null && m.mediaPath!.contains('VID'));
+      expect(vid.type, MessageType.video);
+    });
+
+    test('parses Android 24h timestamp correctly', () {
+      const androidChat = '[16/06/25, 09:05:00] Alice: Good morning';
+      final msgs = parseChat(androidChat);
+      expect(msgs.length, 1);
+      expect(msgs.first.sender, 'Alice');
+      expect(msgs.first.text, 'Good morning');
+    });
+
     test('extracts unique senders', () {
       final msgs = parseChat(sampleChat);
       final senders = extractSenders(msgs);
@@ -68,9 +94,19 @@ void main() {
       expect(title, 'Team Project');
     });
 
+    test('parses Android "with" format', () {
+      const path = 'WhatsApp Chat with Congob KYC Techops.zip';
+      expect(parseChatTitleFromZipFilename(path), 'Congob KYC Techops');
+    });
+
     test('is case insensitive for prefix', () {
       const path = 'WhatsApp Chat - john doe.ZIP';
       expect(parseChatTitleFromZipFilename(path), 'john doe');
+    });
+
+    test('is case insensitive for "with" prefix', () {
+      const path = 'WHATSAPP CHAT WITH My Group.zip';
+      expect(parseChatTitleFromZipFilename(path), 'My Group');
     });
 
     test('throws clear error for wrong format', () {

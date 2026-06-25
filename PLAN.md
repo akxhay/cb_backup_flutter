@@ -29,7 +29,7 @@ The app provides a WhatsApp-like experience for browsing chat history offline, w
    - Support for text messages and embedded media (images).
    - Scrollable, clean, modern UI.
    - Date/day separators visible (TODAY, YESTERDAY, dates) like WhatsApp.
-   - Loading indicators for any async processing (e.g., video thumbnail generation).
+   - Loading indicators for any async processing (e.g., media handling).
    - Show sender name on other people's messages.
 
 4. **Search**
@@ -44,8 +44,10 @@ The app provides a WhatsApp-like experience for browsing chat history offline, w
 
 6. **Zip Filename as Source of Truth for Title**
    - When importing, **first try to parse the chat title (contact/group name) from the zip filename**.
-   - Expected format (from sample): `WhatsApp Chat - <Name>.zip`
-   - Example: `WhatsApp Chat - Rashmi Arya.zip` → Title = "Rashmi Arya"
+   - Supports both formats:
+     - `WhatsApp Chat - <Name>.zip` (common on iOS)
+     - `WhatsApp Chat with <Name>.zip` (common on Android)
+   - Example: `WhatsApp Chat with Congob KYC Techops.zip` → Title = "Congob KYC Techops"
    - If the filename does **not** match the expected format, show a clear error and reject the import.
    - This takes precedence over deriving the title from message senders.
 
@@ -111,7 +113,7 @@ sample/
 | Component                    | Responsibility                                      | Important Notes |
 |-----------------------------|-----------------------------------------------------|-----------------|
 | `ChatRepository`            | Import zips, extract, parse, persist, CRUD          | Title comes from filename first |
-| `parseChatTitleFromZipFilename` | Extract name from "WhatsApp Chat - X.zip"        | Throws on bad format |
+| `parseChatTitleFromZipFilename` | Extract name from "WhatsApp Chat - X.zip" or "WhatsApp Chat with X.zip" | Throws on bad format |
 | `SelfIdentityService`       | Store/retrieve user's name aliases                  | Used for `isSelf()` logic |
 | `parseChat`                 | Convert raw _chat.txt into `List<ChatMessage>`      | Handles attachments, system msgs |
 | `ChatScreen`                | Render messages + in-chat search                    | Uses `MessageBubble` |
@@ -174,13 +176,11 @@ sample/
 - Tabs show live counts. Modern catchy grid: 3-col square tiles, 14px rounded ClipRRect, gradient caption overlays, type badges on non-images, nice empty states.
 - Stickers separated using new `isSticker()` helper (webp files + filename heuristic).
 - Photos/stickers open in built-in full-screen InteractiveViewer (pinch zoom 0.6x-5x + caption bar). Other media open via open_filex.
-- Reuses lazy VideoThumbnailWidget. All media sorted newest first.
+- Videos show icon + filename (no thumbnails).
 - Updated AppBar to clean title + dedicated action icons (perspective + media as last).
 
 ### 2026-06-21 - Loaders for async processing
-- Added `CircularProgressIndicator` loaders in UI for any processing:
-  - Video thumbnail generation (in chat message bubbles and media gallery grid) now displays a small spinner while asynchronously extracting the frame using `video_thumbnail`.
-  - This covers the requirement that any processing (e.g. thumbnail creation) must show a loader.
+- Added `CircularProgressIndicator` loaders in UI for any processing (e.g. when opening media).
 
 ### 2026-06-21 - Full Media Type Support + Open in Default App
 - Expanded `MessageType` enum to support `video`, `audio`, `document` (in addition to `image`, `text`, `system`).
@@ -196,7 +196,7 @@ sample/
 ### 2026-06-21 - Zip Filename Parsing for Chat Title
 - Added `parseChatTitleFromZipFilename()` in `chat_parser.dart`.
 - `ChatRepository.importZip()` now **always tries to parse title from zip filename first**.
-- Expected format enforced: `WhatsApp Chat - <Name>.zip`.
+- Supports "WhatsApp Chat - Name.zip" and "WhatsApp Chat with Name.zip".
 - Bad format → clear error thrown before extraction.
 - Updated sample import to use real filename parsing (title is now "Rashmi Arya").
 - Added unit tests for the new filename parser.
@@ -272,14 +272,7 @@ flutter test
   - When re-importing a zip for the same contact/group (title match from filename), show a confirmation dialog asking whether to merge.
   - On "Merge": parse new messages, combine with existing (sorted by date + deduplicated by timestamp|sender|text|media), copy new media files, update messages.json + metadata.
   - Added `mergeIntoChat` method.
-- **2026-06-21**: Restored video thumbnails with visibility-based loading to prevent lag:
-  - Video thumbnails are generated only when the bubble/grid item enters the viewport (on screen).
-  - Uses a StatefulWidget that loads in initState and releases the bitmap in dispose (when scrolled off-screen).
-  - This applies lazy loading for heavy media (videos) and keeps memory low for long chats.
-  - Same pattern helps with general chat data rendering lag.
-  - Thumbnails show loader while processing.
-  - Gallery also uses the widget for video items.
-  - Loaders section from previous update removed as the causing feature was reverted.
+- **2026-06-21**: Video thumbnails removed completely. Videos now display as icon + filename (consistent with documents/audio).
 - **2026-06-21**: Enhanced duplicate handling for imports:
   - Import as new for same base title now uses labels e.g. "Rashmi Arya (2)", keeping participant/sender names unchanged.
   - Merge popup presents options for each labeled version to merge into.
@@ -298,7 +291,7 @@ flutter test
   - loadMessages auto-recovers by re-saving json from txt.
   - Added debugPrint on load errors.
   - This ensures metadata and message data survive force close and app restarts on device.
-- **2026-06-21**: Added strict zip filename parsing for chat title. Enforce "WhatsApp Chat - Name.zip" format or show error. Updated sample handling and tests.
+- **2026-06-21**: Added strict zip filename parsing for chat title. Supports both "WhatsApp Chat - Name.zip" and "WhatsApp Chat with Name.zip" (Android format) or show error. Updated sample handling and tests.
 - **2026-06-21**: Fixed build error in `chat_list_screen.dart` (`ctx` → `context` in `_askCustomName` call).
 - **2026-06-20**: Core MVP completed (import, viewer, search, self identification).
 - **2026-06-20**: Initial project setup + bug fixes on template.

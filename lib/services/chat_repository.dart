@@ -85,7 +85,7 @@ class ChatRepository extends ChangeNotifier {
   /// Core import: extract, parse, detect self, save metadata + messages.json, persist list.
   ///
   /// The chat title (display name) is parsed from the zip filename using
-  /// `parseChatTitleFromZipFilename` (e.g. "WhatsApp Chat - <Name>.zip").
+  /// `parseChatTitleFromZipFilename` (supports both " - " and " with " formats).
   /// If the filename is not in the correct format an error is thrown.
   Future<Chat?> importZip(File zipFile, {String? forceTitle}) async {
     final base = await _getBaseDir();
@@ -113,18 +113,55 @@ class ChatRepository extends ChangeNotifier {
       }
     }
 
-    // Locate chat txt (case-insensitive search)
+    // Locate the chat log .txt file.
+    // - iOS usually: _chat.txt
+    // - Android often: chat.txt or a file named after the chat (e.g. "WhatsApp Chat with XXX.txt")
+    // We prefer known names, otherwise pick the largest .txt file (the chat log is typically the biggest).
     String? chatTxtPath;
+    final txtCandidates = <File>[];
+
     await for (final entity in chatDir.list(recursive: true, followLinks: false)) {
-      if (entity is File && p.basename(entity.path).toLowerCase() == '_chat.txt') {
-        chatTxtPath = entity.path;
+      if (entity is File) {
+        final base = p.basename(entity.path).toLowerCase();
+        if (base.endsWith('.txt')) {
+          txtCandidates.add(entity);
+        }
+      }
+    }
+
+    // Prefer standard names
+    for (final f in txtCandidates) {
+      final base = p.basename(f.path).toLowerCase();
+      if (base == '_chat.txt' || base == 'chat.txt') {
+        chatTxtPath = f.path;
         break;
       }
     }
+
+    if (chatTxtPath == null && txtCandidates.isNotEmpty) {
+      // Pick the .txt that looks like a real WhatsApp chat log (contains timestamp lines like [dd/mm/yy, ...)
+      for (final f in txtCandidates) {
+        try {
+          // Read only the beginning to detect
+          final preview = await f.openRead(0, 4096).transform(utf8.decoder).join();
+          if (RegExp(r'\[\d{1,2}/\d{1,2}/\d{2}').hasMatch(preview)) {
+            chatTxtPath = f.path;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Last fallback: largest .txt
+    if (chatTxtPath == null && txtCandidates.isNotEmpty) {
+      txtCandidates.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
+      chatTxtPath = txtCandidates.first.path;
+    }
+
     if (chatTxtPath == null) {
       // cleanup
       await chatDir.delete(recursive: true);
-      throw Exception('No _chat.txt found in the zip.');
+      throw Exception('No chat log (.txt) file found in the zip.');
     }
 
     final raw = await File(chatTxtPath).readAsString();
@@ -181,16 +218,46 @@ class ChatRepository extends ChangeNotifier {
         }
       }
 
-      // Find _chat.txt in temp
+      // Find chat log .txt in temp (Android may use different filename)
       String? txtPath;
+      final txtCandidates = <File>[];
+
       await for (final entity in temp.list(recursive: true, followLinks: false)) {
-        if (entity is File && p.basename(entity.path).toLowerCase() == '_chat.txt') {
-          txtPath = entity.path;
+        if (entity is File && p.basename(entity.path).toLowerCase().endsWith('.txt')) {
+          txtCandidates.add(entity);
+        }
+      }
+
+      // Prefer standard names
+      for (final f in txtCandidates) {
+        final base = p.basename(f.path).toLowerCase();
+        if (base == '_chat.txt' || base == 'chat.txt') {
+          txtPath = f.path;
           break;
         }
       }
+
+      if (txtPath == null && txtCandidates.isNotEmpty) {
+        // Pick the one that contains chat timestamp lines
+        for (final f in txtCandidates) {
+          try {
+            final preview = await f.openRead(0, 4096).transform(utf8.decoder).join();
+            if (RegExp(r'\[\d{1,2}/\d{1,2}/\d{2}').hasMatch(preview)) {
+              txtPath = f.path;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Last fallback: largest
+      if (txtPath == null && txtCandidates.isNotEmpty) {
+        txtCandidates.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
+        txtPath = txtCandidates.first.path;
+      }
+
       if (txtPath == null) {
-        throw Exception('No _chat.txt found in the zip for merge.');
+        throw Exception('No chat log (.txt) file found in the zip for merge.');
       }
 
       final raw = await File(txtPath).readAsString();
@@ -216,7 +283,7 @@ class ChatRepository extends ChangeNotifier {
       await for (final entity in temp.list(recursive: true, followLinks: false)) {
         if (entity is File) {
           final base = p.basename(entity.path);
-          if (base.toLowerCase() == '_chat.txt') continue;
+          if (base.toLowerCase().endsWith('.txt')) continue;
           final rel = p.relative(entity.path, from: temp.path);
           final destPath = p.join(target.extractedDir, rel);
           final destFile = File(destPath);
@@ -258,10 +325,10 @@ class ChatRepository extends ChangeNotifier {
   Future<List<ChatMessage>> loadMessages(Chat chat) async {
     final messagesFile = File(p.join(chat.extractedDir, 'messages.json'));
     if (!await messagesFile.exists()) {
-      // fallback: reparse _chat.txt
-      final txt = File(p.join(chat.extractedDir, '_chat.txt'));
-      if (await txt.exists()) {
-        final raw = await txt.readAsString();
+      // fallback: reparse the chat log txt (may be named differently on Android)
+      final txtPath = _findChatLogFile(chat.extractedDir);
+      if (txtPath != null) {
+        final raw = await File(txtPath).readAsString();
         final msgs = parseChat(raw);
         // Re-save as json for faster future loads and robustness after rebuilds
         try {
@@ -279,9 +346,9 @@ class ChatRepository extends ChangeNotifier {
           .toList();
     } catch (_) {
       // If json corrupt, fallback to txt
-      final txt = File(p.join(chat.extractedDir, '_chat.txt'));
-      if (await txt.exists()) {
-        final raw = await txt.readAsString();
+      final txtPath = _findChatLogFile(chat.extractedDir);
+      if (txtPath != null) {
+        final raw = await File(txtPath).readAsString();
         final msgs = parseChat(raw);
         try {
           await _writeFileAtomically(messagesFile, jsonEncode(msgs.map((m) => m.toJson()).toList()));
@@ -290,6 +357,39 @@ class ChatRepository extends ChangeNotifier {
       }
       return [];
     }
+  }
+
+  String? _findChatLogFile(String dirPath) {
+    final dir = Directory(dirPath);
+    if (!dir.existsSync()) return null;
+
+    // Prefer _chat.txt if present
+    final standard = File(p.join(dirPath, '_chat.txt'));
+    if (standard.existsSync()) return standard.path;
+
+    // Find .txt files (Android may use different names like "chat.txt" or "WhatsApp Chat with XXX.txt")
+    final txtFiles = <File>[];
+    for (final entity in dir.listSync(recursive: true)) {
+      if (entity is File && p.basename(entity.path).toLowerCase().endsWith('.txt')) {
+        txtFiles.add(entity);
+      }
+    }
+
+    if (txtFiles.isEmpty) return null;
+
+    // Prefer one that contains actual chat timestamps
+    for (final f in txtFiles) {
+      try {
+        final preview = f.readAsStringSync().substring(0, (4096).clamp(0, f.lengthSync()));
+        if (RegExp(r'\[\d{1,2}/\d{1,2}/\d{2}').hasMatch(preview)) {
+          return f.path;
+        }
+      } catch (_) {}
+    }
+
+    // Fallback to largest
+    txtFiles.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
+    return txtFiles.first.path;
   }
 
   Future<void> deleteChat(Chat chat) async {
@@ -304,7 +404,21 @@ class ChatRepository extends ChangeNotifier {
   }
 
   /// Returns full absolute path for a media file belonging to a chat.
+  /// Tries direct path first, then searches recursively by basename (for cross-platform
+  /// zip differences where media might be in subfolders or referenced differently).
   String resolveMediaPath(Chat chat, String relativeMedia) {
-    return p.join(chat.extractedDir, relativeMedia);
+    final direct = p.join(chat.extractedDir, relativeMedia);
+    if (File(direct).existsSync()) return direct;
+
+    final base = p.basename(relativeMedia);
+    final dir = Directory(chat.extractedDir);
+    if (dir.existsSync()) {
+      for (final entity in dir.listSync(recursive: true)) {
+        if (entity is File && p.basename(entity.path) == base) {
+          return entity.path;
+        }
+      }
+    }
+    return direct; // return original attempt so caller can show error
   }
 }
