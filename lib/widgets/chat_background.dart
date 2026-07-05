@@ -12,11 +12,15 @@ class ChatBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: ChatTheme.chatBackground(context),
-      child: CustomPaint(
-        painter: _ChatPatternPainter(
-          isDark: ChatTheme.isDark(context),
+      child: RepaintBoundary(
+        child: CustomPaint(
+          painter: _ChatPatternPainter(
+            isDark: ChatTheme.isDark(context),
+          ),
+          child: RepaintBoundary(
+            child: child,
+          ),
         ),
-        child: child,
       ),
     );
   }

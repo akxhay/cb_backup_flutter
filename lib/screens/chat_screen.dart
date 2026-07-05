@@ -29,6 +29,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   List<ChatMessage> _allMessages = [];
   List<ChatMessage> _filtered = [];
+  List<dynamic> _displayItems = [];
   final TextEditingController _searchCtrl = TextEditingController();
   bool _loading = true;
   String _search = '';
@@ -64,8 +65,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  List<dynamic> get _displayItems {
-    if (_filtered.isEmpty) return [];
+  void _rebuildDisplayItems() {
+    if (_filtered.isEmpty) {
+      _displayItems = [];
+      return;
+    }
     final List<dynamic> items = [];
     DateTime? currentDate;
 
@@ -85,7 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       items.add(msg);
     }
-    return items;
+    _displayItems = items;
   }
 
   String _formatDateHeader(DateTime date) {
@@ -168,6 +172,7 @@ class _ChatScreenState extends State<ChatScreen> {
               m.sender.toLowerCase().contains(_search))
           .toList();
     }
+    _rebuildDisplayItems();
   }
 
   bool _isSelf(ChatMessage msg) {

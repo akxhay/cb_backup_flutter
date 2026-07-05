@@ -394,8 +394,12 @@ class ChatRepository extends ChangeNotifier {
     return txtFiles.first.path;
   }
 
+  // In-memory cache for resolved media paths to prevent expensive synchronous filesystem checks on every build frame.
+  final Map<String, String> _mediaPathCache = {};
+
   Future<void> deleteChat(Chat chat) async {
     _chats.removeWhere((c) => c.id == chat.id);
+    _mediaPathCache.removeWhere((key, value) => key.startsWith('${chat.id}_'));
     await _persist();
     notifyListeners();
 
@@ -409,18 +413,27 @@ class ChatRepository extends ChangeNotifier {
   /// Tries direct path first, then searches recursively by basename (for cross-platform
   /// zip differences where media might be in subfolders or referenced differently).
   String resolveMediaPath(Chat chat, String relativeMedia) {
+    final cacheKey = '${chat.id}_$relativeMedia';
+    final cached = _mediaPathCache[cacheKey];
+    if (cached != null) return cached;
+
     final direct = p.join(chat.extractedDir, relativeMedia);
-    if (File(direct).existsSync()) return direct;
+    if (File(direct).existsSync()) {
+      _mediaPathCache[cacheKey] = direct;
+      return direct;
+    }
 
     final base = p.basename(relativeMedia);
     final dir = Directory(chat.extractedDir);
     if (dir.existsSync()) {
       for (final entity in dir.listSync(recursive: true)) {
         if (entity is File && p.basename(entity.path) == base) {
+          _mediaPathCache[cacheKey] = entity.path;
           return entity.path;
         }
       }
     }
+    _mediaPathCache[cacheKey] = direct;
     return direct; // return original attempt so caller can show error
   }
 }
