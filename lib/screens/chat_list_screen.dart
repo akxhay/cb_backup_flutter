@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'package:intl/intl.dart';
 
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
@@ -15,6 +16,12 @@ import '../widgets/chat_search_bar.dart';
 import '../widgets/self_chooser_dialog.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
+
+class _GlobalMessageMatch {
+  final Chat chat;
+  final ChatMessage message;
+  _GlobalMessageMatch({required this.chat, required this.message});
+}
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -27,7 +34,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _importing = false;
   bool _isSearching = false;
   String _searchQuery = '';
-  List<Chat> _searchResults = [];
+  List<Chat> _chatSearchResults = [];
+  List<_GlobalMessageMatch> _messageSearchResults = [];
   bool _isLoadingSearch = false;
   Timer? _searchDebounce;
 
@@ -296,7 +304,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
     if (query.trim().isEmpty) {
       setState(() {
-        _searchResults = List.of(allChats);
+        _chatSearchResults = List.of(allChats);
+        _messageSearchResults = [];
         _isLoadingSearch = false;
       });
       return;
@@ -307,48 +316,40 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
 
     final q = query.toLowerCase().trim();
-    final List<Chat> results = [];
 
-    // Fast filter: title or last message preview or any sender (participant)
+    // 1st Section: Name Search (matches in chat titles)
+    final matchedChats = allChats
+        .where((chat) => chat.title.toLowerCase().contains(q))
+        .toList();
+
+    // 2nd Section: Messages Search (matches in message contents across all chats)
+    final List<_GlobalMessageMatch> matchedMsgs = [];
     for (final chat in allChats) {
-      if (chat.title.toLowerCase().contains(q) ||
-          (chat.lastMessagePreview ?? '').toLowerCase().contains(q) ||
-          chat.participants.any((p) => p.toLowerCase().contains(q))) {
-        results.add(chat);
-      }
-    }
-
-    // Search inside messages for remaining chats
-    final remaining = allChats.where((c) => !results.any((r) => r.id == c.id)).toList();
-
-    if (remaining.isNotEmpty) {
-      final futures = remaining.map((chat) async {
-        try {
-          final messages = await repo.loadMessages(chat);
-          final hasMatch = messages.any((msg) =>
-              msg.text.toLowerCase().contains(q) ||
-              msg.sender.toLowerCase().contains(q));
-          return hasMatch ? chat : null;
-        } catch (_) {
-          return null;
+      try {
+        final messages = await repo.loadMessages(chat);
+        for (final msg in messages) {
+          if (msg.type != MessageType.system &&
+              (msg.text.toLowerCase().contains(q) ||
+                  msg.sender.toLowerCase().contains(q))) {
+            matchedMsgs.add(_GlobalMessageMatch(chat: chat, message: msg));
+          }
         }
-      });
-
-      final messageMatches = await Future.wait(futures);
-      results.addAll(messageMatches.whereType<Chat>());
+      } catch (_) {}
     }
 
-    // Remove duplicates (in case a chat matched both fast and content)
-    final seen = <String>{};
-    final finalResults = <Chat>[];
-    for (final c in results) {
-      if (seen.add(c.id)) finalResults.add(c);
-    }
+    // Sort matching messages by time (newest messages first)
+    matchedMsgs.sort((a, b) => b.message.timestamp.compareTo(a.message.timestamp));
 
     if (!mounted) return;
 
+    // Race condition guard: only update state if the search input hasn't changed
+    if (_searchQuery.trim().toLowerCase() != q) {
+      return;
+    }
+
     setState(() {
-      _searchResults = finalResults;
+      _chatSearchResults = matchedChats;
+      _messageSearchResults = matchedMsgs;
       _isLoadingSearch = false;
     });
   }
@@ -490,7 +491,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
     final chats = repo.chats;
-    final displayChats = _isSearching ? _searchResults : chats;
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -515,7 +515,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 setState(() {
                   _isSearching = false;
                   _searchQuery = '';
-                  _searchResults = [];
+                  _chatSearchResults = [];
+                  _messageSearchResults = [];
                   _isLoadingSearch = false;
                 });
                 _searchDebounce?.cancel();
@@ -524,7 +525,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 setState(() {
                   _isSearching = true;
                   _searchQuery = '';
-                  _searchResults = List.of(currentChats);
+                  _chatSearchResults = List.of(currentChats);
+                  _messageSearchResults = [];
                   _isLoadingSearch = false;
                 });
                 _searchDebounce?.cancel();
@@ -597,24 +599,123 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 if (_isSearching && _searchQuery.isNotEmpty && _isLoadingSearch)
                   const LinearProgressIndicator(minHeight: 2),
                 Expanded(
-                  child: displayChats.isEmpty && _isSearching && _searchQuery.isNotEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.search_off_rounded, size: 48, color: cs.onSurfaceVariant),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No results for "$_searchQuery"',
-                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                    ),
+                  child: _isSearching && _searchQuery.isNotEmpty
+                      ? (_chatSearchResults.isEmpty && _messageSearchResults.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.search_off_rounded,
+                                      size: 48, color: cs.onSurfaceVariant),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No results for "$_searchQuery"',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          color: cs.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        )
+                            )
+                          : CustomScrollView(
+                              slivers: [
+                                if (_chatSearchResults.isNotEmpty) ...[
+                                  SliverToBoxAdapter(
+                                    child: _buildSectionHeader(
+                                      context,
+                                      'Chats',
+                                      Icons.chat_bubble_outline_rounded,
+                                      _chatSearchResults.length,
+                                    ),
+                                  ),
+                                  SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) {
+                                        final chat = _chatSearchResults[index];
+                                        return Column(
+                                          children: [
+                                            _ChatListTile(
+                                              chat: chat,
+                                              dateLabel: _formatDate(chat.importDate),
+                                              onTap: () {
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) => ChatScreen(chat: chat),
+                                                  ),
+                                                );
+                                              },
+                                              onDelete: () => _deleteChat(chat),
+                                            ),
+                                            if (index < _chatSearchResults.length - 1)
+                                              Divider(
+                                                height: 1,
+                                                indent: 76,
+                                                color: cs.outlineVariant
+                                                    .withValues(alpha: 0.4),
+                                              ),
+                                          ],
+                                        );
+                                      },
+                                      childCount: _chatSearchResults.length,
+                                    ),
+                                  ),
+                                ],
+                                if (_messageSearchResults.isNotEmpty) ...[
+                                  SliverToBoxAdapter(
+                                    child: _buildSectionHeader(
+                                      context,
+                                      'Messages by Time',
+                                      Icons.message_rounded,
+                                      _messageSearchResults.length,
+                                    ),
+                                  ),
+                                  SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) {
+                                        final match = _messageSearchResults[index];
+                                        return Column(
+                                          children: [
+                                            _GlobalMessageMatchTile(
+                                              match: match,
+                                              searchQuery: _searchQuery,
+                                              onTap: () {
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) => ChatScreen(
+                                                      chat: match.chat,
+                                                      initialMessageUniqueId:
+                                                          match.message.uniqueId,
+                                                      initialSearchQuery:
+                                                          _searchQuery,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                            if (index < _messageSearchResults.length - 1)
+                                              Divider(
+                                                height: 1,
+                                                indent: 76,
+                                                color: cs.outlineVariant
+                                                    .withValues(alpha: 0.4),
+                                              ),
+                                          ],
+                                        );
+                                      },
+                                      childCount: _messageSearchResults.length,
+                                    ),
+                                  ),
+                                ],
+                                const SliverPadding(
+                                  padding: EdgeInsets.only(bottom: 88),
+                                ),
+                              ],
+                            ))
                       : ListView.separated(
-                          itemCount: displayChats.length,
+                          itemCount: chats.length,
                           padding: const EdgeInsets.only(bottom: 88),
                           separatorBuilder: (_, __) => Divider(
                             height: 1,
@@ -622,13 +723,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             color: cs.outlineVariant.withValues(alpha: 0.4),
                           ),
                           itemBuilder: (context, index) {
-                            final chat = displayChats[index];
+                            final chat = chats[index];
                             return _ChatListTile(
                               chat: chat,
                               dateLabel: _formatDate(chat.importDate),
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatScreen(chat: chat),
+                                  ),
                                 );
                               },
                               onDelete: () => _deleteChat(chat),
@@ -829,6 +932,198 @@ class _EmptyChatsState extends StatelessWidget {
               label: const Text('Import chat zip'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildSectionHeader(
+    BuildContext context, String title, IconData icon, int count) {
+  final theme = Theme.of(context);
+  return Padding(
+    padding: const EdgeInsets.only(left: 16, right: 16, top: 20, bottom: 8),
+    child: Row(
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF00A884)),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF00A884).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: theme.brightness == Brightness.dark
+                  ? Colors.white70
+                  : const Color(0xFF00A884),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _GlobalMessageMatchTile extends StatelessWidget {
+  final _GlobalMessageMatch match;
+  final String searchQuery;
+  final VoidCallback onTap;
+
+  const _GlobalMessageMatchTile({
+    required this.match,
+    required this.searchQuery,
+    required this.onTap,
+  });
+
+  String _formatDateTime(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    final matchDate = DateTime(dt.year, dt.month, dt.day);
+    if (matchDate == today) {
+      return DateFormat('HH:mm').format(dt);
+    } else if (matchDate == yesterday) {
+      return 'Yesterday';
+    } else {
+      return DateFormat('dd/MM/yy').format(dt);
+    }
+  }
+
+  List<InlineSpan> _buildHighlightedSpans(
+      String text, String query, TextStyle baseStyle) {
+    if (query.isEmpty) {
+      return [TextSpan(text: text, style: baseStyle)];
+    }
+
+    final List<InlineSpan> spans = [];
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+
+    int start = 0;
+    int indexOfQuery = lowerText.indexOf(lowerQuery, start);
+
+    if (indexOfQuery > 40) {
+      start = indexOfQuery - 30;
+      spans.add(TextSpan(text: '...', style: baseStyle));
+      indexOfQuery = lowerText.indexOf(lowerQuery, start);
+    }
+
+    while (indexOfQuery != -1) {
+      if (indexOfQuery > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, indexOfQuery),
+          style: baseStyle,
+        ));
+      }
+
+      spans.add(TextSpan(
+        text: text.substring(indexOfQuery, indexOfQuery + query.length),
+        style: baseStyle.copyWith(
+          backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.85),
+          color: Colors.black87,
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+
+      start = indexOfQuery + query.length;
+      indexOfQuery = lowerText.indexOf(lowerQuery, start);
+    }
+
+    if (start < text.length) {
+      final endText = text.substring(start);
+      if (endText.length > 50) {
+        spans.add(TextSpan(
+            text: '${endText.substring(0, 47)}...', style: baseStyle));
+      } else {
+        spans.add(TextSpan(text: endText, style: baseStyle));
+      }
+    }
+
+    return spans;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ChatAvatar(
+              name: match.chat.title,
+              radius: 24,
+              isGroup: match.chat.isGroup,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          match.chat.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatDateTime(match.message.timestamp),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${match.message.sender}: ',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF00A884),
+                          ),
+                        ),
+                        ..._buildHighlightedSpans(match.message.text,
+                            searchQuery, textStyle ?? const TextStyle()),
+                      ],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],

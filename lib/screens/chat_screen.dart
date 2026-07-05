@@ -19,14 +19,17 @@ import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/self_chooser_dialog.dart';
 
-extension _ChatMessageUniqueId on ChatMessage {
-  String get uniqueId => '${timestamp.millisecondsSinceEpoch}_${sender}_${text.hashCode}';
-}
-
 class ChatScreen extends StatefulWidget {
   final Chat chat;
+  final String? initialMessageUniqueId;
+  final String? initialSearchQuery;
 
-  const ChatScreen({super.key, required this.chat});
+  const ChatScreen({
+    super.key,
+    required this.chat,
+    this.initialMessageUniqueId,
+    this.initialSearchQuery,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -47,10 +50,17 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   String _search = '';
   bool _showSearch = false;
+  bool _hasScrolledToInitialMessage = false;
+  int _activeScrollId = 0;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialSearchQuery != null) {
+      _search = widget.initialSearchQuery!.trim().toLowerCase();
+      _searchCtrl.text = widget.initialSearchQuery!;
+      _showSearch = true;
+    }
     _load();
     _searchCtrl.addListener(() {
       setState(() {
@@ -69,12 +79,45 @@ class _ChatScreenState extends State<ChatScreen> {
         _applyFilter();
         _loading = false;
       });
+      if (widget.initialMessageUniqueId != null && !_hasScrolledToInitialMessage) {
+        _hasScrolledToInitialMessage = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToMessageByUniqueId(widget.initialMessageUniqueId!);
+        });
+      }
     } catch (_) {
       setState(() {
         _allMessages = [];
         _applyFilter();
         _loading = false;
       });
+    }
+  }
+
+  void _scrollToMessageByUniqueId(String uniqueId) {
+    int targetDisplayIndex = -1;
+    for (int i = 0; i < _displayItems.length; i++) {
+      final item = _displayItems[i];
+      if (item is ChatMessage && item.uniqueId == uniqueId) {
+        targetDisplayIndex = i;
+        break;
+      }
+    }
+    if (targetDisplayIndex != -1) {
+      final listViewIndex = _displayItems.length - 1 - targetDisplayIndex;
+      final targetOffset = _estimateOffset(listViewIndex);
+
+      final matchIdx = _matchIndices.indexWhere((idx) => idx == targetDisplayIndex);
+      if (matchIdx != -1) {
+        setState(() {
+          _currentMatchIndex = matchIdx;
+        });
+      }
+
+      _activeScrollId++;
+      final currentScrollId = _activeScrollId;
+      final keyKey = '${uniqueId}_$targetDisplayIndex';
+      _performScrollAndHighlight(keyKey, uniqueId, targetOffset, 0, currentScrollId);
     }
   }
 
@@ -103,6 +146,14 @@ class _ChatScreenState extends State<ChatScreen> {
       items.add(msg);
     }
     _displayItems = items;
+
+    // Pre-populate keys with unique index suffix
+    for (int i = 0; i < _displayItems.length; i++) {
+      final item = _displayItems[i];
+      if (item is ChatMessage) {
+        _messageKeys.putIfAbsent('${item.uniqueId}_$i', () => GlobalKey());
+      }
+    }
   }
 
   String _formatDateHeader(DateTime date) {
@@ -207,9 +258,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_matchIndices.isNotEmpty) {
         // Default to the newest match (end of list)
         _currentMatchIndex = _matchIndices.length - 1;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToMatch(_currentMatchIndex);
-        });
+        if (widget.initialMessageUniqueId == null || _hasScrolledToInitialMessage) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToMatch(_currentMatchIndex);
+          });
+        }
       } else {
         _currentMatchIndex = -1;
         _highlightedMsgId = null;
@@ -226,24 +279,91 @@ class _ChatScreenState extends State<ChatScreen> {
       if (item is DateTime) {
         offset += 55.0;
       } else if (item is ChatMessage) {
+        final isSelf = _isSelf(item);
+        final showName = !isSelf && widget.chat.isGroup && !_isGroupedWithPrevious(displayIndex);
+        final groupedAbove = _isGroupedWithPrevious(displayIndex);
+        final groupedBelow = _isGroupedWithNext(displayIndex);
+        final topMargin = showName ? 6.0 : (groupedAbove ? 1.5 : 6.0);
+        final bottomMargin = groupedBelow ? 1.5 : 6.0;
+
+        double bubbleHeight = 0.0;
         if (item.type == MessageType.system) {
-          offset += 45.0;
+          bubbleHeight = 45.0;
         } else if (item.type == MessageType.image) {
-          offset += isSticker(item) ? 160.0 : 260.0;
-        } else if (item.type == MessageType.video) {
-          offset += 260.0;
-        } else if (item.type == MessageType.audio) {
-          offset += 85.0;
-        } else {
-          final textLen = item.text.length;
-          if (textLen > 150) {
-            offset += 160.0;
-          } else if (textLen > 60) {
-            offset += 105.0;
+          final isStickerMsg = isSticker(item);
+          if (isStickerMsg) {
+            bubbleHeight = 160.0;
           } else {
-            offset += 80.0;
+            if (item.text.isEmpty) {
+              bubbleHeight = 220.0;
+            } else {
+              // Estimate caption text lines
+              final text = item.text;
+              final lines = text.split('\n');
+              int linesCount = 0;
+              for (final line in lines) {
+                linesCount += (line.length / 33).ceil();
+                if (line.isEmpty) linesCount += 1;
+              }
+              if (linesCount == 0) linesCount = 1;
+              final textHeight = (linesCount * 21.5) + 32.0;
+              bubbleHeight = 220.0 + 6.0 + textHeight;
+            }
           }
+          bubbleHeight += topMargin + bottomMargin;
+        } else if (item.type == MessageType.video) {
+          if (item.text.isEmpty) {
+            bubbleHeight = 220.0;
+          } else {
+            final text = item.text;
+            final lines = text.split('\n');
+            int linesCount = 0;
+            for (final line in lines) {
+              linesCount += (line.length / 33).ceil();
+              if (line.isEmpty) linesCount += 1;
+            }
+            if (linesCount == 0) linesCount = 1;
+            final textHeight = (linesCount * 21.5) + 32.0;
+            bubbleHeight = 220.0 + 6.0 + textHeight;
+          }
+          bubbleHeight += topMargin + bottomMargin;
+        } else if (item.type == MessageType.audio) {
+          bubbleHeight = 85.0;
+          bubbleHeight += topMargin + bottomMargin;
+        } else if (item.type == MessageType.document) {
+          if (item.text.isEmpty) {
+            bubbleHeight = 75.0;
+          } else {
+            final text = item.text;
+            final lines = text.split('\n');
+            int linesCount = 0;
+            for (final line in lines) {
+              linesCount += (line.length / 33).ceil();
+              if (line.isEmpty) linesCount += 1;
+            }
+            if (linesCount == 0) linesCount = 1;
+            final textHeight = (linesCount * 20.0) + 15.0;
+            bubbleHeight = 81.0 + textHeight;
+          }
+          bubbleHeight += topMargin + bottomMargin;
+        } else {
+          // Text message
+          final text = item.text;
+          final lines = text.split('\n');
+          int linesCount = 0;
+          for (final line in lines) {
+            linesCount += (line.length / 33).ceil();
+            if (line.isEmpty) linesCount += 1;
+          }
+          if (linesCount == 0) linesCount = 1;
+
+          bubbleHeight = (linesCount * 21.5) + 32.0;
+          if (showName) {
+            bubbleHeight += 20.0;
+          }
+          bubbleHeight += topMargin + bottomMargin;
         }
+        offset += bubbleHeight;
       }
     }
     return offset;
@@ -265,20 +385,37 @@ class _ChatScreenState extends State<ChatScreen> {
     _highlightTimer?.cancel();
     _highlightedMsgId = null;
 
-    _performScrollAndHighlight(msg, targetOffset, 0);
+    _activeScrollId++;
+    final currentScrollId = _activeScrollId;
+    final keyKey = '${msg.uniqueId}_$targetDisplayIndex';
+    _performScrollAndHighlight(keyKey, msg.uniqueId, targetOffset, 0, currentScrollId);
   }
 
-  void _performScrollAndHighlight(ChatMessage msg, double targetOffset, int retryCount) {
+  void _performScrollAndHighlight(String keyKey, String uniqueId, double targetOffset, int retryCount, int scrollId) {
     if (!mounted) return;
+    if (scrollId != _activeScrollId) return; // Cancelled by a newer scroll request!
+
+    if (!_scrollCtrl.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _performScrollAndHighlight(keyKey, uniqueId, targetOffset, retryCount, scrollId);
+      });
+      return;
+    }
 
     final currentMax = _scrollCtrl.position.maxScrollExtent;
     final approxOffset = targetOffset.clamp(0.0, currentMax);
 
-    _scrollCtrl.jumpTo(approxOffset);
+    // Only jump if we are not already close to the target offset to prevent flickering
+    if ((approxOffset - _scrollCtrl.offset).abs() > 1.0) {
+      _scrollCtrl.jumpTo(approxOffset);
+    }
 
-    Future.delayed(const Duration(milliseconds: 100), () {
+    // Increase delay to 150ms during retries to allow layout to update and build items
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      final key = _messageKeys[msg.uniqueId];
+      if (scrollId != _activeScrollId) return; // Cancelled!
+
+      final key = _messageKeys[keyKey];
       if (key != null && key.currentContext != null) {
         Scrollable.ensureVisible(
           key.currentContext!,
@@ -286,7 +423,7 @@ class _ChatScreenState extends State<ChatScreen> {
           alignment: 0.5,
         );
         setState(() {
-          _highlightedMsgId = msg.uniqueId;
+          _highlightedMsgId = uniqueId;
         });
 
         _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
@@ -296,12 +433,12 @@ class _ChatScreenState extends State<ChatScreen> {
             });
           }
         });
-      } else if (retryCount < 8) {
-        // If the key is null, retry the jump and scroll to let ListView build it
-        _performScrollAndHighlight(msg, targetOffset, retryCount + 1);
+      } else if (retryCount < 12) {
+        // Retry with larger retry limit to guarantee reaching deep-linked target in long histories
+        _performScrollAndHighlight(keyKey, uniqueId, targetOffset, retryCount + 1, scrollId);
       } else {
         setState(() {
-          _highlightedMsgId = msg.uniqueId;
+          _highlightedMsgId = uniqueId;
         });
         _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
           if (mounted) {
@@ -566,7 +703,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: ListView.builder(
                       controller: _scrollCtrl,
                       reverse: true,
-                      cacheExtent: 1500.0,
+                      cacheExtent: 3000.0,
                       padding: const EdgeInsets.only(top: 8, bottom: 8),
                       itemCount: _displayItems.length,
                       itemBuilder: (context, index) {
@@ -583,7 +720,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ? _resolveMedia(msg)
                             : null;
                         
-                        final key = _messageKeys.putIfAbsent(msg.uniqueId, () => GlobalKey());
+                        final key = _messageKeys.putIfAbsent('${msg.uniqueId}_$displayIndex', () => GlobalKey());
 
                         return MessageBubble(
                           key: key,

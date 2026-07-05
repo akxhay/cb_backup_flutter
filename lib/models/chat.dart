@@ -66,6 +66,7 @@ class ChatMessage {
       };
 
   String get formattedTime => DateFormat('HH:mm').format(timestamp);
+  String get uniqueId => '${timestamp.millisecondsSinceEpoch}_${sender}_${text.hashCode}';
 }
 
 class Chat {
