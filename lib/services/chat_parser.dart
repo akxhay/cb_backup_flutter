@@ -61,8 +61,10 @@ const _mediaOmittedPlaceholder = '__media_omitted__';
       // remove from startIdx to endIdx+1
       final before = lineText.substring(0, startIdx).trimRight();
       final after = lineText.substring(endIdx + 1).trimLeft();
-      final cleaned =
-          [before, after].where((s) => s.isNotEmpty).join(' ').trim();
+      final cleaned = [
+        before,
+        after,
+      ].where((s) => s.isNotEmpty).join(' ').trim();
       return (media: media, cleanedText: cleaned);
     }
   }
@@ -90,7 +92,10 @@ const _mediaOmittedPlaceholder = '__media_omitted__';
 /// Removes WhatsApp's "This message was edited" marker from the text and returns whether it was edited.
 ({String text, bool isEdited}) _stripEditedMarker(String text) {
   // Matches variations like: "text ‎<This message was edited>" or "text <This message was edited>"
-  final editedRe = RegExp(r'\s*[' + _lrm + r']?\s*<This message was edited>', caseSensitive: false);
+  final editedRe = RegExp(
+    r'\s*[' + _lrm + r']?\s*<This message was edited>',
+    caseSensitive: false,
+  );
   if (editedRe.hasMatch(text)) {
     final cleaned = text.replaceAll(editedRe, '').trim();
     return (text: cleaned, isEdited: true);
@@ -98,11 +103,12 @@ const _mediaOmittedPlaceholder = '__media_omitted__';
   return (text: text.trim(), isEdited: false);
 }
 
-
-
 /// Parses raw WhatsApp chat log content into messages (supports both iOS and Android export formats).
 /// [myAliases] are used only for caller-side isSelf computation (parser stays neutral).
-List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const []}) {
+List<ChatMessage> parseChat(
+  String rawContent, {
+  List<String> myAliases = const [],
+}) {
   // Normalize line endings (the txt from zip may have \r\n on some systems)
   final normalized = rawContent.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   final lines = normalized.split('\n');
@@ -147,12 +153,15 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
 
         // Handle possible MM/DD/YY (swap if month > 12)
         if (m > 12 && d <= 12) {
-          final tmp = d; d = m; m = tmp;
+          final tmp = d;
+          d = m;
+          m = tmp;
         }
 
         String t = timePart.replaceAll('\u202f', ' ').trim();
         bool isPM = false;
-        bool hasAmPm = t.toUpperCase().endsWith('PM') || t.toUpperCase().endsWith('AM');
+        bool hasAmPm =
+            t.toUpperCase().endsWith('PM') || t.toUpperCase().endsWith('AM');
         if (t.toUpperCase().endsWith('PM')) {
           isPM = true;
           t = t.substring(0, t.length - 2).trim();
@@ -166,7 +175,8 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
         int sec = timeParts.length > 2 ? int.parse(timeParts[2]) : 0;
 
         if (isPM && h < 12) h += 12;
-        if (!isPM && h == 12 && hasAmPm) h = 0; // 12 AM only if AM/PM was present
+        if (!isPM && h == 12 && hasAmPm)
+          h = 0; // 12 AM only if AM/PM was present
 
         ts = DateTime(y, m, d, h, min, sec);
       } catch (_) {
@@ -202,7 +212,8 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
           media = potentialMedia;
           type = getMediaTypeFromFilename(media);
           finalText = '';
-        } else if (sender.toLowerCase().contains('end-to-end') || text.toLowerCase().contains('encrypted')) {
+        } else if (sender.toLowerCase().contains('end-to-end') ||
+            text.toLowerCase().contains('encrypted')) {
           type = MessageType.system;
         } else if (_deletedMessageRe.hasMatch(finalText)) {
           type = MessageType.system;
@@ -310,13 +321,15 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
     } else {
       // Orphan line before first message
       final stripped = _stripEditedMarker(line.trim().replaceAll(_lrm, ''));
-      messages.add(ChatMessage(
-        timestamp: DateTime.now(),
-        sender: 'System',
-        text: stripped.text,
-        type: MessageType.system,
-        isEdited: stripped.isEdited,
-      ));
+      messages.add(
+        ChatMessage(
+          timestamp: DateTime.now(),
+          sender: 'System',
+          text: stripped.text,
+          type: MessageType.system,
+          isEdited: stripped.isEdited,
+        ),
+      );
     }
   }
 
@@ -348,9 +361,14 @@ String buildPreview(List<ChatMessage> messages) {
 
   if (last.mediaPath != null) {
     // Treat LRM-only or whitespace-only as "no caption" so we get nice "sent a photo"
-    final visibleCaption = last.text.replaceAll(_lrm, '').replaceAll('\n', ' ').trim();
+    final visibleCaption = last.text
+        .replaceAll(_lrm, '')
+        .replaceAll('\n', ' ')
+        .trim();
     if (visibleCaption.isNotEmpty) {
-      final p = visibleCaption.length > 50 ? '${visibleCaption.substring(0, 47)}...' : visibleCaption;
+      final p = visibleCaption.length > 50
+          ? '${visibleCaption.substring(0, 47)}...'
+          : visibleCaption;
       return '${last.sender}: $p';
     }
     String label;
@@ -387,7 +405,10 @@ String parseChatTitleFromZipFilename(String filePath) {
   }
 
   // Match either " - " or " with " after "WhatsApp Chat" (case insensitive)
-  final prefixMatch = RegExp(r'^WhatsApp Chat (?:- |with )', caseSensitive: false).firstMatch(name);
+  final prefixMatch = RegExp(
+    r'^WhatsApp Chat (?:- |with )',
+    caseSensitive: false,
+  ).firstMatch(name);
 
   if (prefixMatch == null) {
     throw Exception(
@@ -402,7 +423,9 @@ String parseChatTitleFromZipFilename(String filePath) {
   final title = name.substring(prefixMatch.end).trim();
 
   if (title.isEmpty) {
-    throw Exception('Could not extract contact or group name from the zip filename.');
+    throw Exception(
+      'Could not extract contact or group name from the zip filename.',
+    );
   }
 
   return title;
@@ -428,7 +451,16 @@ int extractLabelNumber(String title) {
 MessageType getMediaTypeFromFilename(String filename) {
   final ext = filename.split('.').last.toLowerCase().trim();
 
-  const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'};
+  const imageExts = {
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'heic',
+    'heif',
+    'bmp',
+  };
   const videoExts = {'mp4', 'mov', 'avi', 'mkv', '3gp', 'm4v'};
   const audioExts = {'mp3', 'm4a', 'opus', 'aac', 'wav', 'ogg', 'amr'};
 

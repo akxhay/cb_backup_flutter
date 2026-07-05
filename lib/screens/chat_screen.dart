@@ -135,14 +135,16 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isGroupedWithPrevious(int displayIndex) {
     if (displayIndex <= 0) return false;
     final current = _displayItems[displayIndex];
-    if (current is! ChatMessage || current.type == MessageType.system) return false;
+    if (current is! ChatMessage || current.type == MessageType.system)
+      return false;
 
     for (var i = displayIndex - 1; i >= 0; i--) {
       final prev = _displayItems[i];
       if (prev is DateTime) return false;
       if (prev is ChatMessage) {
         if (prev.type == MessageType.system) return false;
-        return prev.sender == current.sender && _isSelf(prev) == _isSelf(current);
+        return prev.sender == current.sender &&
+            _isSelf(prev) == _isSelf(current);
       }
     }
     return false;
@@ -151,14 +153,16 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isGroupedWithNext(int displayIndex) {
     if (displayIndex >= _displayItems.length - 1) return false;
     final current = _displayItems[displayIndex];
-    if (current is! ChatMessage || current.type == MessageType.system) return false;
+    if (current is! ChatMessage || current.type == MessageType.system)
+      return false;
 
     for (var i = displayIndex + 1; i < _displayItems.length; i++) {
       final next = _displayItems[i];
       if (next is DateTime) return false;
       if (next is ChatMessage) {
         if (next.type == MessageType.system) return false;
-        return next.sender == current.sender && _isSelf(next) == _isSelf(current);
+        return next.sender == current.sender &&
+            _isSelf(next) == _isSelf(current);
       }
     }
     return false;
@@ -169,8 +173,11 @@ class _ChatScreenState extends State<ChatScreen> {
       _filtered = List.of(_allMessages);
     } else {
       _filtered = _allMessages
-          .where((m) => m.text.toLowerCase().contains(_search) ||
-              m.sender.toLowerCase().contains(_search))
+          .where(
+            (m) =>
+                m.text.toLowerCase().contains(_search) ||
+                m.sender.toLowerCase().contains(_search),
+          )
           .toList();
     }
     _rebuildDisplayItems();
@@ -194,29 +201,37 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Only allow choosing from the configured allowed usernames that appear in this chat
     List<String> candidates = chatSenders;
-    final allowed = identity.myUsernames.where((u) =>
-        chatSenders.any((p) => p.toLowerCase() == u.toLowerCase())).toList();
+    final allowed = identity.myUsernames
+        .where(
+          (u) => chatSenders.any((p) => p.toLowerCase() == u.toLowerCase()),
+        )
+        .toList();
     if (allowed.isNotEmpty) {
       candidates = allowed;
     }
 
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No matching usernames from your config. Manage usernames in the list screen.')),
+        const SnackBar(
+          content: Text(
+            'No matching usernames from your config. Manage usernames in the list screen.',
+          ),
+        ),
       );
       return;
     }
 
     final selected = await showDialog<String>(
       context: context,
-      builder: (ctx) => SelfChooserDialog(
-        candidates: candidates,
-        initialSelected: current,
-      ),
+      builder: (ctx) =>
+          SelfChooserDialog(candidates: candidates, initialSelected: current),
     );
 
     if (selected != null && selected.isNotEmpty) {
-      await identity.setSelfForChat(widget.chat.id, selected); // auto adds to config
+      await identity.setSelfForChat(
+        widget.chat.id,
+        selected,
+      ); // auto adds to config
       setState(() {}); // refresh message alignments
     } else if (selected == '') {
       final custom = await _askCustomName(context);
@@ -241,7 +256,10 @@ class _ChatScreenState extends State<ChatScreen> {
           decoration: const InputDecoration(hintText: 'e.g. Xharma'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(c, controller.text),
             child: const Text('Save'),
@@ -253,26 +271,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _openMediaGallery() async {
     if (_loading || _allMessages.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No messages loaded yet')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No messages loaded yet')));
       return;
     }
 
     final hasMedia = _allMessages.any((m) => m.mediaPath != null);
     if (!hasMedia) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No media in this chat')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No media in this chat')));
       return;
     }
 
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _MediaGalleryScreen(
-          messages: _allMessages,
-          chat: widget.chat,
-        ),
+        builder: (_) =>
+            _MediaGalleryScreen(messages: _allMessages, chat: widget.chat),
       ),
     );
   }
@@ -336,7 +352,9 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(_showSearch ? Icons.close_rounded : Icons.search_rounded),
+            icon: Icon(
+              _showSearch ? Icons.close_rounded : Icons.search_rounded,
+            ),
             tooltip: _showSearch ? 'Hide search' : 'Search in chat',
             onPressed: () {
               setState(() {
@@ -376,66 +394,68 @@ class _ChatScreenState extends State<ChatScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _filtered.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _search.isEmpty
-                                  ? Icons.chat_bubble_outline_rounded
-                                  : Icons.search_off_rounded,
-                              size: 48,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _search.isEmpty
-                                  ? 'No messages loaded yet'
-                                  : 'No matches for "$_search"',
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _search.isEmpty
+                              ? Icons.chat_bubble_outline_rounded
+                              : Icons.search_off_rounded,
+                          size: 48,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                      )
-                    : ChatBackground(
-                        child: ListView.builder(
-                          reverse: true,
-                          padding: const EdgeInsets.only(top: 8, bottom: 8),
-                          itemCount: _displayItems.length,
-                          itemBuilder: (context, index) {
-                            final displayIndex =
-                                _displayItems.length - 1 - index;
-                            final item = _displayItems[displayIndex];
-
-                            if (item is DateTime) {
-                              return _buildDateSeparator(item);
-                            }
-
-                            final msg = item as ChatMessage;
-                            final isSelf = _isSelf(msg);
-                            final mediaPath =
-                                msg.mediaPath != null ? _resolveMedia(msg) : null;
-                            return MessageBubble(
-                              message: msg,
-                              isSelf: isSelf,
-                              mediaFullPath: mediaPath,
-                              showSenderName: widget.chat.isGroup,
-                              groupedAbove:
-                                  _isGroupedWithPrevious(displayIndex),
-                              groupedBelow: _isGroupedWithNext(displayIndex),
-                            );
-                          },
+                        const SizedBox(height: 12),
+                        Text(
+                          _search.isEmpty
+                              ? 'No messages loaded yet'
+                              : 'No matches for "$_search"',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
+                  )
+                : ChatBackground(
+                    child: ListView.builder(
+                      reverse: true,
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      itemCount: _displayItems.length,
+                      itemBuilder: (context, index) {
+                        final displayIndex = _displayItems.length - 1 - index;
+                        final item = _displayItems[displayIndex];
+
+                        if (item is DateTime) {
+                          return _buildDateSeparator(item);
+                        }
+
+                        final msg = item as ChatMessage;
+                        final isSelf = _isSelf(msg);
+                        final mediaPath = msg.mediaPath != null
+                            ? _resolveMedia(msg)
+                            : null;
+                        return MessageBubble(
+                          message: msg,
+                          isSelf: isSelf,
+                          mediaFullPath: mediaPath,
+                          showSenderName: widget.chat.isGroup,
+                          groupedAbove: _isGroupedWithPrevious(displayIndex),
+                          groupedBelow: _isGroupedWithNext(displayIndex),
+                        );
+                      },
+                    ),
+                  ),
           ),
           if (_search.isNotEmpty)
             Material(
               color: theme.colorScheme.surface,
               elevation: 2,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Text(
                   '${_filtered.length} of ${_allMessages.length} messages',
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -459,10 +479,7 @@ class _MediaGalleryScreen extends StatefulWidget {
   final List<ChatMessage> messages;
   final Chat chat;
 
-  const _MediaGalleryScreen({
-    required this.messages,
-    required this.chat,
-  });
+  const _MediaGalleryScreen({required this.messages, required this.chat});
 
   @override
   State<_MediaGalleryScreen> createState() => _MediaGalleryScreenState();
@@ -480,9 +497,7 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
   void initState() {
     super.initState();
     // Filter + newest first
-    _allMedia = widget.messages
-        .where((m) => m.mediaPath != null)
-        .toList()
+    _allMedia = widget.messages.where((m) => m.mediaPath != null).toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     _photos = _allMedia
@@ -493,7 +508,9 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
 
     _videos = _allMedia.where((m) => m.type == MessageType.video).toList();
 
-    _documents = _allMedia.where((m) => m.type == MessageType.document).toList();
+    _documents = _allMedia
+        .where((m) => m.type == MessageType.document)
+        .toList();
 
     _audios = _allMedia.where((m) => m.type == MessageType.audio).toList();
   }
@@ -547,7 +564,11 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.photo_library_outlined, size: 56, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.photo_library_outlined,
+              size: 56,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 16),
             Text(
               'No items',
@@ -584,7 +605,11 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
               color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              child: Icon(Icons.broken_image, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              child: Icon(
+                Icons.broken_image,
+                size: 40,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           );
         } else if (msg.type == MessageType.video) {
@@ -598,7 +623,11 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                    child: Icon(Icons.broken_image, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    child: Icon(
+                      Icons.broken_image,
+                      size: 40,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 );
               }
@@ -620,7 +649,10 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ],
@@ -647,7 +679,10 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -682,7 +717,10 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.bottomCenter,
@@ -708,7 +746,10 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
                       top: 6,
                       right: 6,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black54,
                           borderRadius: BorderRadius.circular(4),
@@ -742,7 +783,9 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
             isScrollable: true,
             labelColor: Theme.of(context).colorScheme.primary,
             indicatorColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+            unselectedLabelColor: Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant,
             dividerColor: Theme.of(context).dividerColor.withValues(alpha: 0.3),
             tabs: [
               Tab(text: 'All (${_allMedia.length})'),
@@ -786,20 +829,25 @@ class _ArchiveFooter extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              Icon(Icons.archive_outlined, size: 18, color: cs.onSurfaceVariant),
+              Icon(
+                Icons.archive_outlined,
+                size: 18,
+                color: cs.onSurfaceVariant,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   messageCount > 0
                       ? 'Viewing backup archive · $messageCount messages'
                       : 'Viewing backup archive',
-                  style: TextStyle(
-                    color: cs.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
                 ),
               ),
-              Icon(Icons.lock_outline_rounded, size: 16, color: cs.onSurfaceVariant),
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 16,
+                color: cs.onSurfaceVariant,
+              ),
             ],
           ),
         ),
@@ -807,4 +855,3 @@ class _ArchiveFooter extends StatelessWidget {
     );
   }
 }
-
