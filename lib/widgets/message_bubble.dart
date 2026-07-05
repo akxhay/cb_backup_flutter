@@ -46,34 +46,6 @@ class MessageBubble extends StatelessWidget {
     }
   }
 
-  IconData _getMediaIcon(MessageType type) {
-    switch (type) {
-      case MessageType.image:
-        return Icons.image_outlined;
-      case MessageType.video:
-        return Icons.play_circle_fill_rounded;
-      case MessageType.audio:
-        return Icons.mic_rounded;
-      case MessageType.document:
-        return Icons.description_outlined;
-      default:
-        return Icons.attach_file_rounded;
-    }
-  }
-
-  Color _mediaAccent(MessageType type) {
-    switch (type) {
-      case MessageType.video:
-        return const Color(0xFFE542A3);
-      case MessageType.audio:
-        return const Color(0xFF53BDEB);
-      case MessageType.document:
-        return const Color(0xFF7F66FF);
-      default:
-        return const Color(0xFF8696A0);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (message.type == MessageType.system) {
@@ -98,43 +70,72 @@ class MessageBubble extends StatelessWidget {
     final align = isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final hasMedia = message.mediaPath != null && mediaFullPath != null;
 
-    Widget content;
+    final isMediaOnly = hasMedia &&
+        (message.type == MessageType.image || message.type == MessageType.video) &&
+        message.text.isEmpty;
+
+    final showName = !isSelf && showSenderName && !groupedAbove;
+
+    Widget innerContent;
     if (hasMedia) {
-      content = _buildMediaContent(context, textColor, align);
+      if (message.type == MessageType.image) {
+        innerContent = _buildImageContent(context, textColor, align, timeColor);
+      } else if (message.type == MessageType.video) {
+        innerContent = _buildVideoContent(context, textColor, align, timeColor);
+      } else if (message.type == MessageType.audio) {
+        innerContent = _buildAudioContent(context, textColor, timeColor);
+      } else {
+        innerContent = _buildFileContent(context, textColor, timeColor);
+      }
     } else {
-      content = Text(
-        message.text,
-        style: TextStyle(color: textColor, height: 1.38, fontSize: 15.5),
+      innerContent = _buildTextContent(context, textColor, timeColor);
+    }
+
+    if (isMediaOnly) {
+      return Container(
+        margin: ChatTheme.bubbleMargin(
+          isSelf: isSelf,
+          groupedAbove: groupedAbove,
+          groupedBelow: groupedBelow,
+          showSenderName: showName,
+        ),
+        child: Column(
+          crossAxisAlignment: align,
+          children: [
+            if (showName)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 3),
+                child: Text(
+                  message.sender,
+                  style: TextStyle(
+                    color: ChatTheme.senderNameColor(message.sender),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: innerContent,
+            ),
+          ],
+        ),
       );
     }
 
-    final showName = !isSelf && showSenderName && !groupedAbove;
-    final radius = ChatTheme.bubbleBorderRadius(
-      isSelf: isSelf,
-      groupedAbove: groupedAbove,
-      groupedBelow: groupedBelow,
-    );
-
-    final bubbleContent = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        content,
-        const SizedBox(height: 2),
-        Align(
-          alignment: Alignment.centerRight,
-          child: _TimestampRow(
-            time: message.formattedTime,
-            isEdited: message.isEdited,
-            color: timeColor,
-          ),
-        ),
-      ],
-    );
-
-    final isMediaOnly = hasMedia &&
-        message.type == MessageType.image &&
-        message.text.isEmpty;
+    final hasTail = !groupedAbove;
+    final horizontalPadding = isSelf
+        ? EdgeInsets.only(left: 10, right: hasTail ? 18 : 10)
+        : EdgeInsets.only(left: hasTail ? 18 : 10, right: 10);
 
     return Container(
       margin: ChatTheme.bubbleMargin(
@@ -158,30 +159,18 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: isMediaOnly ? Colors.transparent : bubbleColor,
-              borderRadius: radius,
-              boxShadow: isMediaOnly
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-            ),
+          PhysicalShape(
+            clipper: BubbleClipper(isSelf: isSelf, hasTail: hasTail),
+            elevation: 1.0,
+            color: bubbleColor,
+            shadowColor: Colors.black.withValues(alpha: 0.08),
             child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMediaOnly ? 0 : 10,
-                vertical: isMediaOnly ? 0 : 7,
-              ),
+              padding: horizontalPadding.copyWith(top: 6, bottom: 6),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: ChatTheme.bubbleMaxWidth(context),
                 ),
-                child: bubbleContent,
+                child: innerContent,
               ),
             ),
           ),
@@ -193,7 +182,7 @@ class MessageBubble extends StatelessWidget {
   Widget _buildSystemMessage(BuildContext context) {
     return Center(
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 48),
+        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 48),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: ChatTheme.systemPillColor(context),
@@ -209,7 +198,7 @@ class MessageBubble extends StatelessWidget {
           message.text,
           style: TextStyle(
             color: ChatTheme.datePillTextColor(context),
-            fontSize: 12.5,
+            fontSize: 12,
             height: 1.3,
           ),
           textAlign: TextAlign.center,
@@ -229,100 +218,326 @@ class MessageBubble extends StatelessWidget {
       alignment: isSelf ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onTap: () => _openMedia(context),
-        child: Image.file(
-          File(mediaFullPath!),
-          width: 140,
-          height: 140,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined),
+        child: Stack(
+          children: [
+            Image.file(
+              File(mediaFullPath!),
+              width: 140,
+              height: 140,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined),
+            ),
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  message.formattedTime,
+                  style: const TextStyle(color: Colors.white, fontSize: 9.5),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildMediaContent(
-    BuildContext context,
-    Color textColor,
-    CrossAxisAlignment align,
-  ) {
-    if (message.type == MessageType.image) {
-      return _buildImageContent(context, textColor, align);
-    }
-    if (message.type == MessageType.video) {
-      return _buildVideoContent(context, textColor);
-    }
-    return _buildFileContent(context, textColor);
+  Widget _buildTextContent(BuildContext context, Color textColor, Color timeColor) {
+    final textStyle = TextStyle(color: textColor, height: 1.38, fontSize: 15.5);
+    final double spacerWidth = message.isEdited ? 75.0 : 45.0;
+
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: message.text, style: textStyle),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: SizedBox(width: spacerWidth, height: 10),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: _TimestampRow(
+            time: message.formattedTime,
+            isEdited: message.isEdited,
+            color: timeColor,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildImageContent(
     BuildContext context,
     Color textColor,
     CrossAxisAlignment align,
+    Color timeColor,
   ) {
     final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
-    return GestureDetector(
-      onTap: () => _openMedia(context),
-      child: Column(
-        crossAxisAlignment: align,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.file(
-              File(mediaFullPath!),
-              width: maxW,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                width: maxW,
-                height: 160,
-                color: Colors.black12,
-                alignment: Alignment.center,
-                child: const Icon(Icons.broken_image_outlined, size: 40),
+    final imageWidget = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(mediaFullPath!),
+        width: maxW,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: maxW,
+          height: 160,
+          color: Colors.black12,
+          alignment: Alignment.center,
+          child: const Icon(Icons.broken_image_outlined, size: 40),
+        ),
+      ),
+    );
+
+    if (message.text.isEmpty) {
+      return GestureDetector(
+        onTap: () => _openMedia(context),
+        child: Stack(
+          children: [
+            imageWidget,
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _TimestampRow(
+                  time: message.formattedTime,
+                  isEdited: message.isEdited,
+                  color: Colors.white,
+                ),
               ),
             ),
-          ),
-          if (message.text.isNotEmpty) ...[
+          ],
+        ),
+      );
+    } else {
+      return GestureDetector(
+        onTap: () => _openMedia(context),
+        child: Column(
+          crossAxisAlignment: align,
+          children: [
+            imageWidget,
             const SizedBox(height: 6),
-            Text(
-              message.text,
-              style: TextStyle(color: textColor, fontSize: 15, height: 1.35),
+            _buildTextContent(context, textColor, timeColor),
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildVideoContent(
+    BuildContext context,
+    Color textColor,
+    CrossAxisAlignment align,
+    Color timeColor,
+  ) {
+    final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
+    final videoWidget = Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: maxW,
+          height: 160,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            Icons.videocam_rounded,
+            size: 48,
+            color: textColor.withValues(alpha: 0.35),
+          ),
+        ),
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+        ),
+      ],
+    );
+
+    if (message.text.isEmpty) {
+      return GestureDetector(
+        onTap: () => _openMedia(context),
+        child: Stack(
+          children: [
+            videoWidget,
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _TimestampRow(
+                  time: message.formattedTime,
+                  isEdited: message.isEdited,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
+        ),
+      );
+    } else {
+      return GestureDetector(
+        onTap: () => _openMedia(context),
+        child: Column(
+          crossAxisAlignment: align,
+          children: [
+            videoWidget,
+            const SizedBox(height: 6),
+            _buildTextContent(context, textColor, timeColor),
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildAudioContent(BuildContext context, Color textColor, Color timeColor) {
+    final accent = const Color(0xFF53BDEB); // voice note blue
+    
+    return Container(
+      width: 230,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.play_arrow_rounded,
+            color: isSelf ? textColor : accent,
+            size: 32,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _VoiceWaveform(color: isSelf ? textColor.withValues(alpha: 0.5) : accent),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "0:00",
+                      style: TextStyle(color: timeColor, fontSize: 11),
+                    ),
+                    _TimestampRow(
+                      time: message.formattedTime,
+                      isEdited: message.isEdited,
+                      color: timeColor,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              CircleAvatar(
+                radius: 17,
+                backgroundColor: isSelf 
+                    ? textColor.withValues(alpha: 0.12) 
+                    : accent.withValues(alpha: 0.12),
+                child: Icon(
+                  Icons.person,
+                  color: isSelf ? textColor.withValues(alpha: 0.5) : accent,
+                  size: 18,
+                ),
+              ),
+              const Icon(Icons.mic_rounded, color: Color(0xFF53BDEB), size: 12),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildVideoContent(BuildContext context, Color textColor) {
+  Widget _buildFileContent(BuildContext context, Color textColor, Color timeColor) {
     final filename = message.mediaPath!.split(RegExp(r'[/\\]')).last;
-    return GestureDetector(
-      onTap: () => _openMedia(context),
+    final ext = filename.contains('.') ? filename.split('.').last.toUpperCase() : 'FILE';
+    
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
-            alignment: Alignment.center,
+          Row(
             children: [
               Container(
-                width: ChatTheme.bubbleMaxWidth(context) - 20,
-                height: 140,
+                width: 36,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
+                  color: const Color(0xFFF15C5C),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                child: Icon(
-                  Icons.videocam_rounded,
-                  size: 48,
-                  color: textColor.withValues(alpha: 0.35),
+                alignment: Alignment.center,
+                child: Text(
+                  ext.substring(0, (ext.length).clamp(0, 4)),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  shape: BoxShape.circle,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      filename,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      ext,
+                      style: TextStyle(
+                        color: textColor.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 34),
               ),
             ],
           ),
@@ -330,70 +545,16 @@ class MessageBubble extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               message.text,
-              style: TextStyle(color: textColor, fontSize: 15, height: 1.35),
-            ),
-          ] else ...[
-            const SizedBox(height: 4),
-            Text(
-              filename,
-              style: TextStyle(
-                color: textColor.withValues(alpha: 0.75),
-                fontSize: 12,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: textColor, fontSize: 14.5),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFileContent(BuildContext context, Color textColor) {
-    final filename = message.mediaPath!.split(RegExp(r'[/\\]')).last;
-    final accent = _mediaAccent(message.type);
-
-    return GestureDetector(
-      onTap: () => _openMedia(context),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(_getMediaIcon(message.type), color: accent, size: 26),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (message.text.isNotEmpty)
-                  Text(
-                    message.text,
-                    style: TextStyle(color: textColor, fontSize: 15, height: 1.35),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                if (message.text.isNotEmpty) const SizedBox(height: 2),
-                Text(
-                  filename,
-                  style: TextStyle(
-                    color: textColor.withValues(alpha: 0.7),
-                    fontSize: 12.5,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (message.type == MessageType.audio) ...[
-                  const SizedBox(height: 6),
-                  _VoiceWaveform(color: accent),
-                ],
-              ],
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _TimestampRow(
+              time: message.formattedTime,
+              isEdited: message.isEdited,
+              color: timeColor,
             ),
           ),
         ],
@@ -461,5 +622,59 @@ class _VoiceWaveform extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+class BubbleClipper extends CustomClipper<Path> {
+  final bool isSelf;
+  final bool hasTail;
+
+  BubbleClipper({required this.isSelf, required this.hasTail});
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    const double r = 12.0; // border radius
+
+    if (isSelf) {
+      if (hasTail) {
+        // Top right tail pointing outwards
+        path.moveTo(r, 0);
+        path.lineTo(size.width - 10, 0);
+        // Drawing tail
+        path.quadraticBezierTo(size.width - 2, 0, size.width, 0);
+        path.quadraticBezierTo(size.width - 3, 5, size.width - 10, 9);
+        path.lineTo(size.width - 10, size.height - r);
+        path.quadraticBezierTo(size.width - 10, size.height, size.width - 10 - r, size.height);
+        path.lineTo(r, size.height);
+        path.quadraticBezierTo(0, size.height, 0, size.height - r);
+        path.lineTo(0, r);
+        path.quadraticBezierTo(0, 0, r, 0);
+      } else {
+        path.addRRect(RRect.fromLTRBR(0, 0, size.width, size.height, const Radius.circular(r)));
+      }
+    } else {
+      if (hasTail) {
+        // Top left tail pointing outwards
+        path.moveTo(10 + r, 0);
+        path.lineTo(size.width - r, 0);
+        path.quadraticBezierTo(size.width, 0, size.width, r);
+        path.lineTo(size.width, size.height - r);
+        path.quadraticBezierTo(size.width, size.height, size.width - r, size.height);
+        path.lineTo(10 + r, size.height);
+        path.quadraticBezierTo(10, size.height, 10, size.height - r);
+        path.lineTo(10, 9);
+        path.quadraticBezierTo(3, 5, 0, 0);
+        path.quadraticBezierTo(2, 0, 10, 0);
+      } else {
+        path.addRRect(RRect.fromLTRBR(0, 0, size.width, size.height, const Radius.circular(r)));
+      }
+    }
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant BubbleClipper oldClipper) {
+    return oldClipper.isSelf != isSelf || oldClipper.hasTail != hasTail;
   }
 }

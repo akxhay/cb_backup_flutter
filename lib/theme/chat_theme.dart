@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 class ChatTheme {
   ChatTheme._();
 
-  static const double bubbleRadius = 18;
+  static const double bubbleRadius = 12;
   static const double bubbleTailRadius = 4;
-  static const double bubbleSpacing = 2;
-  static const double groupSpacing = 10;
+  static const double bubbleSpacing = 1.5;
+  static const double groupSpacing = 6.0;
 
   static double bubbleMaxWidth(BuildContext context) =>
       MediaQuery.sizeOf(context).width * 0.78;
@@ -19,7 +19,7 @@ class ChatTheme {
     if (isDark(context)) {
       return const Color(0xFF0B141A);
     }
-    return const Color(0xFFE7EDE8);
+    return const Color(0xFFEFEAE2);
   }
 
   static Color sentBubbleColor(BuildContext context) {
@@ -31,7 +31,7 @@ class ChatTheme {
 
   static Color receivedBubbleColor(BuildContext context) {
     if (isDark(context)) {
-      return const Color(0xFF1F2C34);
+      return const Color(0xFF202C33);
     }
     return Colors.white;
   }
