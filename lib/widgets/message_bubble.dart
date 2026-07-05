@@ -281,6 +281,19 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  String _getFileSize(String path) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        final bytes = file.lengthSync();
+        if (bytes < 1024) return '$bytes B';
+        if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+        return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      }
+    } catch (_) {}
+    return '';
+  }
+
   Widget _buildImageContent(
     BuildContext context,
     Color textColor,
@@ -288,19 +301,47 @@ class MessageBubble extends StatelessWidget {
     Color timeColor,
   ) {
     final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
+    final isGif = message.mediaPath?.toLowerCase().endsWith('.gif') ?? false;
+
     final imageWidget = ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: Image.file(
-        File(mediaFullPath!),
-        width: maxW,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          width: maxW,
-          height: 160,
-          color: Colors.black12,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, size: 40),
-        ),
+      child: Stack(
+        children: [
+          Image.file(
+            File(mediaFullPath!),
+            width: maxW,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              width: maxW,
+              height: 160,
+              color: Colors.black12,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image_outlined, size: 40),
+            ),
+          ),
+          if (isGif)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white24, width: 0.8),
+                ),
+                child: const Text(
+                  'GIF',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
 
@@ -351,6 +392,8 @@ class MessageBubble extends StatelessWidget {
     Color timeColor,
   ) {
     final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
+    final sizeLabel = _getFileSize(mediaFullPath!);
+
     final videoWidget = Stack(
       alignment: Alignment.center,
       children: [
@@ -358,13 +401,21 @@ class MessageBubble extends StatelessWidget {
           width: maxW,
           height: 160,
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.08),
+            color: Colors.black.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.04),
+                Colors.black.withValues(alpha: 0.25),
+              ],
+            ),
           ),
           child: Icon(
             Icons.videocam_rounded,
-            size: 48,
-            color: textColor.withValues(alpha: 0.35),
+            size: 44,
+            color: textColor.withValues(alpha: 0.4),
           ),
         ),
         Container(
@@ -373,9 +424,33 @@ class MessageBubble extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.5),
             shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 1),
           ),
           child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
         ),
+        if (sizeLabel.isNotEmpty)
+          Positioned(
+            bottom: 8,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.videocam_rounded, color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    sizeLabel,
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
 

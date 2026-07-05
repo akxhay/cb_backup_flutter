@@ -26,7 +26,10 @@ allprojects {
 subprojects {
     afterEvaluate {
         if (project.plugins.hasPlugin("com.android.library") || project.plugins.hasPlugin("com.android.application")) {
-            // nothing needed
+            val android = project.extensions.findByName("android")
+            if (android is com.android.build.gradle.BaseExtension) {
+                android.compileSdkVersion = "android-36"
+            }
         }
     }
 }
