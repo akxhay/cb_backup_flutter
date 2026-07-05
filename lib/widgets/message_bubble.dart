@@ -301,7 +301,8 @@ class MessageBubble extends StatelessWidget {
     CrossAxisAlignment align,
     Color timeColor,
   ) {
-    final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
+    final double maxW = (ChatTheme.bubbleMaxWidth(context) - 16).clamp(180.0, 262.0);
+    final double maxH = 220.0;
     final isGif = message.mediaPath?.toLowerCase().endsWith('.gif') ?? false;
 
     final imageWidget = ClipRRect(
@@ -311,10 +312,11 @@ class MessageBubble extends StatelessWidget {
           Image.file(
             File(mediaFullPath!),
             width: maxW,
+            height: maxH,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
               width: maxW,
-              height: 160,
+              height: maxH,
               color: Colors.black12,
               alignment: Alignment.center,
               child: const Icon(Icons.broken_image_outlined, size: 40),
@@ -392,7 +394,8 @@ class MessageBubble extends StatelessWidget {
     CrossAxisAlignment align,
     Color timeColor,
   ) {
-    final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
+    final double maxW = (ChatTheme.bubbleMaxWidth(context) - 16).clamp(180.0, 262.0);
+    final double maxH = 220.0;
     final sizeLabel = _getFileSize(mediaFullPath!);
 
     return FutureBuilder<String?>(
@@ -410,11 +413,11 @@ class MessageBubble extends StatelessWidget {
                 Image.file(
                   File(thumbPath),
                   width: maxW,
-                  height: 160,
+                  height: maxH,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     width: maxW,
-                    height: 160,
+                    height: maxH,
                     color: Colors.black.withValues(alpha: 0.12),
                     child: Icon(
                       Icons.videocam_rounded,
@@ -426,7 +429,7 @@ class MessageBubble extends StatelessWidget {
               else
                 Container(
                   width: maxW,
-                  height: 160,
+                  height: maxH,
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.12),
                     gradient: LinearGradient(
