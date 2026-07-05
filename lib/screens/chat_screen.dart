@@ -9,6 +9,7 @@ import '../models/chat.dart';
 import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
+import '../services/video_thumbnail_service.dart';
 import '../theme/chat_theme.dart';
 import '../widgets/chat_avatar.dart';
 import '../widgets/chat_background.dart';
@@ -587,29 +588,45 @@ class _MediaGalleryScreenState extends State<_MediaGalleryScreen> {
             ),
           );
         } else if (msg.type == MessageType.video) {
-          preview = Container(
-            color: Theme.of(context).colorScheme.surfaceContainerHigh,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  _getIconForType(msg.type),
-                  size: 42,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    filename,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          preview = FutureBuilder<String?>(
+            future: VideoThumbnailService.getThumbnail(fullPath),
+            builder: (context, snapshot) {
+              final thumb = snapshot.data;
+              if (thumb != null && File(thumb).existsSync()) {
+                return Image.file(
+                  File(thumb),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    child: Icon(Icons.broken_image, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
+                );
+              }
+              return Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _getIconForType(msg.type),
+                      size: 42,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        filename,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         } else {
           preview = Container(

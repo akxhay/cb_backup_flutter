@@ -5,6 +5,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
+import '../services/video_thumbnail_service.dart';
 import '../theme/chat_theme.dart';
 import 'full_screen_image_viewer.dart';
 
@@ -394,104 +395,132 @@ class MessageBubble extends StatelessWidget {
     final maxW = ChatTheme.bubbleMaxWidth(context) - 4;
     final sizeLabel = _getFileSize(mediaFullPath!);
 
-    final videoWidget = Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: maxW,
-          height: 160,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.04),
-                Colors.black.withValues(alpha: 0.25),
+    return FutureBuilder<String?>(
+      future: VideoThumbnailService.getThumbnail(mediaFullPath!),
+      builder: (context, snapshot) {
+        final thumbPath = snapshot.data;
+        final hasThumb = thumbPath != null && File(thumbPath).existsSync();
+
+        final videoPreviewWidget = ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (hasThumb)
+                Image.file(
+                  File(thumbPath),
+                  width: maxW,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: maxW,
+                    height: 160,
+                    color: Colors.black.withValues(alpha: 0.12),
+                    child: Icon(
+                      Icons.videocam_rounded,
+                      size: 44,
+                      color: textColor.withValues(alpha: 0.4),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: maxW,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.04),
+                        Colors.black.withValues(alpha: 0.25),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.videocam_rounded,
+                    size: 44,
+                    color: textColor.withValues(alpha: 0.4),
+                  ),
+                ),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24, width: 1),
+                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+              ),
+              if (sizeLabel.isNotEmpty)
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.videocam_rounded, color: Colors.white, size: 12),
+                        const SizedBox(width: 4),
+                        Text(
+                          sizeLabel,
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+
+        if (message.text.isEmpty) {
+          return GestureDetector(
+            onTap: () => _openMedia(context),
+            child: Stack(
+              children: [
+                videoPreviewWidget,
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: _TimestampRow(
+                      time: message.formattedTime,
+                      isEdited: message.isEdited,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ],
             ),
-          ),
-          child: Icon(
-            Icons.videocam_rounded,
-            size: 44,
-            color: textColor.withValues(alpha: 0.4),
-          ),
-        ),
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white24, width: 1),
-          ),
-          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
-        ),
-        if (sizeLabel.isNotEmpty)
-          Positioned(
-            bottom: 8,
-            left: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.videocam_rounded, color: Colors.white, size: 12),
-                  const SizedBox(width: 4),
-                  Text(
-                    sizeLabel,
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
+          );
+        } else {
+          return GestureDetector(
+            onTap: () => _openMedia(context),
+            child: Column(
+              crossAxisAlignment: align,
+              children: [
+                videoPreviewWidget,
+                const SizedBox(height: 6),
+                _buildTextContent(context, textColor, timeColor),
+              ],
             ),
-          ),
-      ],
+          );
+        }
+      },
     );
-
-    if (message.text.isEmpty) {
-      return GestureDetector(
-        onTap: () => _openMedia(context),
-        child: Stack(
-          children: [
-            videoWidget,
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: _TimestampRow(
-                  time: message.formattedTime,
-                  isEdited: message.isEdited,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      return GestureDetector(
-        onTap: () => _openMedia(context),
-        child: Column(
-          crossAxisAlignment: align,
-          children: [
-            videoWidget,
-            const SizedBox(height: 6),
-            _buildTextContent(context, textColor, timeColor),
-          ],
-        ),
-      );
-    }
   }
 
   Widget _buildAudioContent(BuildContext context, Color textColor, Color timeColor) {
