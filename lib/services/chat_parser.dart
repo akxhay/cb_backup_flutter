@@ -73,12 +73,8 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
 
     // Try bracket format first, then fallback, then Android dash format (no brackets)
     var match = _timestampRe.firstMatch(line);
-    if (match == null) {
-      match = _timestampReFallback.firstMatch(line);
-    }
-    if (match == null) {
-      match = _timestampReDash.firstMatch(line);
-    }
+    match ??= _timestampReFallback.firstMatch(line);
+    match ??= _timestampReDash.firstMatch(line);
 
     if (match != null) {
       final datePart = match.group(1)!;
