@@ -397,9 +397,13 @@ class ChatRepository extends ChangeNotifier {
   // In-memory cache for resolved media paths to prevent expensive synchronous filesystem checks on every build frame.
   final Map<String, String> _mediaPathCache = {};
 
+  // Lazily built maps of: chat.id -> (basename -> absolutePath) to avoid redundant directory scanning.
+  final Map<String, Map<String, String>> _chatFileIndex = {};
+
   Future<void> deleteChat(Chat chat) async {
     _chats.removeWhere((c) => c.id == chat.id);
     _mediaPathCache.removeWhere((key, value) => key.startsWith('${chat.id}_'));
+    _chatFileIndex.remove(chat.id);
     await _persist();
     notifyListeners();
 
@@ -407,6 +411,24 @@ class ChatRepository extends ChangeNotifier {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+  }
+
+  void _buildFileIndex(Chat chat) {
+    if (_chatFileIndex.containsKey(chat.id)) return;
+
+    final index = <String, String>{};
+    final dir = Directory(chat.extractedDir);
+    if (dir.existsSync()) {
+      try {
+        for (final entity in dir.listSync(recursive: true)) {
+          if (entity is File) {
+            final base = p.basename(entity.path).toLowerCase();
+            index[base] = entity.path;
+          }
+        }
+      } catch (_) {}
+    }
+    _chatFileIndex[chat.id] = index;
   }
 
   /// Returns full absolute path for a media file belonging to a chat.
@@ -417,22 +439,24 @@ class ChatRepository extends ChangeNotifier {
     final cached = _mediaPathCache[cacheKey];
     if (cached != null) return cached;
 
+    // 1. Try direct path first (extremely fast)
     final direct = p.join(chat.extractedDir, relativeMedia);
     if (File(direct).existsSync()) {
       _mediaPathCache[cacheKey] = direct;
       return direct;
     }
 
-    final base = p.basename(relativeMedia);
-    final dir = Directory(chat.extractedDir);
-    if (dir.existsSync()) {
-      for (final entity in dir.listSync(recursive: true)) {
-        if (entity is File && p.basename(entity.path) == base) {
-          _mediaPathCache[cacheKey] = entity.path;
-          return entity.path;
-        }
-      }
+    // 2. Build index lazily if recursive search is needed
+    _buildFileIndex(chat);
+
+    // 3. Look up in the indexed filenames map
+    final base = p.basename(relativeMedia).toLowerCase();
+    final indexedPath = _chatFileIndex[chat.id]?[base];
+    if (indexedPath != null) {
+      _mediaPathCache[cacheKey] = indexedPath;
+      return indexedPath;
     }
+
     _mediaPathCache[cacheKey] = direct;
     return direct; // return original attempt so caller can show error
   }
