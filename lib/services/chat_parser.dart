@@ -20,6 +20,14 @@ final _timestampReDash = RegExp(
   caseSensitive: false,
 );
 
+// Matches WhatsApp's deleted message markers (with optional LRM prefix):
+//   "You deleted this message."
+//   "This message was deleted."
+final _deletedMessageRe = RegExp(
+  r'^\s*(?:You deleted this message|This message was deleted)\.?\s*$',
+  caseSensitive: false,
+);
+
 /// Helper to extract media filename if <attached: ...> is present in the line (anywhere).
 /// Returns the media name and the text with the tag removed (caption remains).
 ({String? media, String cleanedText}) _parseAttached(String lineText) {
@@ -143,7 +151,10 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
         // Android WhatsApp export often references media directly as the "text" part
         // e.g. "IMG-20250616-WA0001.jpg" instead of "<attached: IMG-...>"
         // Also catches other filename-only media lines
-        if (potentialMedia.contains('.') &&
+        // Must NOT contain spaces (real filenames from WA exports don't have spaces;
+        // sentences like "You deleted this message." would otherwise match).
+        if (!potentialMedia.contains(' ') &&
+            potentialMedia.contains('.') &&
             potentialMedia.split('.').last.length <= 5 && // plausible extension
             potentialMedia.length > 4 &&
             potentialMedia.length < 120) {
@@ -152,6 +163,8 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
           type = getMediaTypeFromFilename(media);
           finalText = '';
         } else if (sender.toLowerCase().contains('end-to-end') || text.toLowerCase().contains('encrypted')) {
+          type = MessageType.system;
+        } else if (_deletedMessageRe.hasMatch(finalText)) {
           type = MessageType.system;
         }
       }
