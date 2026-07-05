@@ -160,29 +160,6 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
         type = MessageType.system;
       }
 
-      // Check if this timestamped line is a caption for a previous media message
-      if (current != null &&
-          current.mediaPath != null &&
-          sender.toLowerCase() == current.sender.toLowerCase() &&
-          (ts.difference(current.timestamp).inSeconds.abs() < 120) &&
-          media == null) {
-        // Append as caption to the existing media message (immutable)
-        final combined = current.text.isNotEmpty
-            ? '${current.text}\n$finalText'
-            : finalText;
-        final stripped = _stripEditedMarker(combined);
-
-        current = ChatMessage(
-          timestamp: current.timestamp,
-          sender: current.sender,
-          text: stripped.text,
-          mediaPath: current.mediaPath,
-          type: current.type,
-          isEdited: stripped.isEdited || current.isEdited,
-        );
-        continue;
-      }
-
       // Normal case: finish previous message
       if (current != null) {
         messages.add(current);
