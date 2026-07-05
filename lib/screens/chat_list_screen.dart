@@ -14,7 +14,6 @@ import '../widgets/chat_avatar.dart';
 import '../widgets/chat_search_bar.dart';
 import '../widgets/self_chooser_dialog.dart';
 import 'chat_screen.dart';
-import 'my_usernames_screen.dart';
 import 'settings_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -491,9 +490,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
     final chats = repo.chats;
-
     final displayChats = _isSearching ? _searchResults : chats;
-
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -502,8 +499,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
         elevation: 0,
         scrolledUnderElevation: 1,
         title: const Text(
-          'Chats',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 22),
+          'CB Backup',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            color: Color(0xFF00A884),
+          ),
         ),
         actions: [
           IconButton(
@@ -698,11 +699,10 @@ class _ChatListTile extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ChatAvatar(
                 name: chat.title,
-                radius: 28,
+                radius: 25,
                 isGroup: chat.isGroup,
               ),
               const SizedBox(width: 14),
@@ -710,28 +710,15 @@ class _ChatListTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            chat.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          dateLabel,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      chat.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.1,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -739,12 +726,45 @@ class _ChatListTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14.5,
-                        color: cs.onSurfaceVariant,
+                        fontSize: 13.5,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.8),
                       ),
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    dateLabel,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF00A884),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00A884),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${chat.messageCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

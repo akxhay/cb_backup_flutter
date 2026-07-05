@@ -7,7 +7,7 @@ import 'my_usernames_screen.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  static const String _appVersion = '1.0.0';
+  static const String _appVersion = '1.1.5';
 
   String _getThemeLabel(ThemeMode mode) {
     switch (mode) {
@@ -77,83 +77,100 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeService = context.watch<ThemeService>();
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text('CB Backup', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
         children: [
-          // Top: Icon and Version
-          Center(
-            child: Column(
+          // Profile block
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Row(
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                CircleAvatar(
+                  radius: 34,
+                  backgroundColor: const Color(0xFF00A884).withValues(alpha: 0.15),
+                  child: const Icon(Icons.person, size: 40, color: Color(0xFF00A884)),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'WhatsApp Backup Viewer',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Offline Local Database Archiver',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                        ),
                       ),
                     ],
                   ),
-                  child: ClipOval(
-                    child: Image.asset(
-                      'assets/ic_launcher.png',
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'CB Backup',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Version $_appVersion',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
                 ),
               ],
             ),
           ),
+          const Divider(height: 1),
+          
+          const SizedBox(height: 8),
 
-          const SizedBox(height: 32),
-
-          // Usernames option
+          // Usernames
           ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: const Text('Usernames'),
-            subtitle: const Text('Manage your aliases for "me" detection'),
-            trailing: const Icon(Icons.chevron_right),
+            leading: const Icon(Icons.person_outline_rounded, color: Color(0xFF00A884)),
+            title: const Text('Usernames', style: TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: const Text('Manage your aliases for "me" identity detection'),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const MyUsernamesScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const MyUsernamesScreen()),
               );
             },
           ),
 
-          const Divider(height: 32),
-
-          // Theme option (opens popup)
+          // Theme / Appearance
           ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('Theme'),
-            subtitle: Text(_getThemeLabel(themeService.themeMode)),
-            trailing: const Icon(Icons.chevron_right),
+            leading: const Icon(Icons.palette_outlined, color: Color(0xFF00A884)),
+            title: const Text('Theme', style: TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: Text('Current theme: ${_getThemeLabel(themeService.themeMode)}'),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () => _showThemeDialog(context, themeService),
+          ),
+
+          // Help / About
+          ListTile(
+            leading: const Icon(Icons.help_outline_rounded, color: Color(0xFF00A884)),
+            title: const Text('Help', style: TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: const Text('Version details, contact support, licenses'),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+            onTap: () {
+              showAboutDialog(
+
+                context: context,
+                applicationName: 'CB Backup',
+                applicationVersion: 'Version $_appVersion',
+                applicationIcon: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: CircleAvatar(
+                    backgroundColor: const Color(0xFF00A884).withValues(alpha: 0.15),
+                    child: const Icon(Icons.person, color: Color(0xFF00A884)),
+                  ),
+                ),
+                children: const [
+                  Text('Offline local database and media archive viewer for WhatsApp exports.'),
+                ],
+              );
+            },
           ),
         ],
       ),
