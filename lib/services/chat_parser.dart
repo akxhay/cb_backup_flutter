@@ -218,7 +218,8 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
         } else {
           // Regular text continuation, or Android direct media filename on next line
           final potential = cont.trim();
-          if (potential.contains('.') &&
+          if (!potential.contains(' ') &&
+              potential.contains('.') &&
               potential.split('.').last.length <= 5 &&
               potential.length > 4 &&
               potential.length < 120) {
