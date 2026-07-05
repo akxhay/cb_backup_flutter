@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,10 @@ import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/self_chooser_dialog.dart';
 
+extension _ChatMessageUniqueId on ChatMessage {
+  String get uniqueId => '${timestamp.millisecondsSinceEpoch}_${sender}_${text.hashCode}';
+}
+
 class ChatScreen extends StatefulWidget {
   final Chat chat;
 
@@ -32,6 +37,13 @@ class _ChatScreenState extends State<ChatScreen> {
   List<ChatMessage> _filtered = [];
   List<dynamic> _displayItems = [];
   final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
+  final Map<String, GlobalKey> _messageKeys = {};
+  List<int> _matchIndices = [];
+  int _currentMatchIndex = -1;
+  String? _highlightedMsgId;
+  Timer? _highlightTimer;
+
   bool _loading = true;
   String _search = '';
   bool _showSearch = false;
@@ -169,18 +181,149 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _applyFilter() {
-    if (_search.isEmpty) {
-      _filtered = List.of(_allMessages);
-    } else {
-      _filtered = _allMessages
-          .where(
-            (m) =>
-                m.text.toLowerCase().contains(_search) ||
-                m.sender.toLowerCase().contains(_search),
-          )
-          .toList();
-    }
+    // We always display all messages to keep the context scrollable
+    _filtered = List.of(_allMessages);
     _rebuildDisplayItems();
+
+    if (_search.isEmpty) {
+      _matchIndices = [];
+      _currentMatchIndex = -1;
+      _highlightedMsgId = null;
+      _highlightTimer?.cancel();
+    } else {
+      // Find all matching indices in _displayItems
+      final List<int> matches = [];
+      for (int i = 0; i < _displayItems.length; i++) {
+        final item = _displayItems[i];
+        if (item is ChatMessage) {
+          final sender = item.sender.toLowerCase();
+          final text = item.text.toLowerCase();
+          if (sender.contains(_search) || text.contains(_search)) {
+            matches.add(i);
+          }
+        }
+      }
+      _matchIndices = matches;
+      if (_matchIndices.isNotEmpty) {
+        // Default to the newest match (end of list)
+        _currentMatchIndex = _matchIndices.length - 1;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToMatch(_currentMatchIndex);
+        });
+      } else {
+        _currentMatchIndex = -1;
+        _highlightedMsgId = null;
+      }
+    }
+  }
+
+  double _estimateOffset(int targetListViewIndex) {
+    double offset = 0.0;
+    for (int i = 0; i < targetListViewIndex; i++) {
+      final displayIndex = _displayItems.length - 1 - i;
+      if (displayIndex < 0 || displayIndex >= _displayItems.length) continue;
+      final item = _displayItems[displayIndex];
+      if (item is DateTime) {
+        offset += 55.0;
+      } else if (item is ChatMessage) {
+        if (item.type == MessageType.system) {
+          offset += 45.0;
+        } else if (item.type == MessageType.image) {
+          offset += isSticker(item) ? 160.0 : 260.0;
+        } else if (item.type == MessageType.video) {
+          offset += 260.0;
+        } else if (item.type == MessageType.audio) {
+          offset += 85.0;
+        } else {
+          final textLen = item.text.length;
+          if (textLen > 150) {
+            offset += 160.0;
+          } else if (textLen > 60) {
+            offset += 105.0;
+          } else {
+            offset += 80.0;
+          }
+        }
+      }
+    }
+    return offset;
+  }
+
+  void _scrollToMatch(int matchIndex) {
+    if (_matchIndices.isEmpty || matchIndex < 0 || matchIndex >= _matchIndices.length) return;
+    setState(() {
+      _currentMatchIndex = matchIndex;
+    });
+
+    final targetDisplayIndex = _matchIndices[matchIndex];
+    final msg = _displayItems[targetDisplayIndex] as ChatMessage;
+
+    // Calculate reversed list index
+    final listViewIndex = _displayItems.length - 1 - targetDisplayIndex;
+    final targetOffset = _estimateOffset(listViewIndex);
+
+    _highlightTimer?.cancel();
+    _highlightedMsgId = null;
+
+    _performScrollAndHighlight(msg, targetOffset, 0);
+  }
+
+  void _performScrollAndHighlight(ChatMessage msg, double targetOffset, int retryCount) {
+    if (!mounted) return;
+
+    final currentMax = _scrollCtrl.position.maxScrollExtent;
+    final approxOffset = targetOffset.clamp(0.0, currentMax);
+
+    _scrollCtrl.jumpTo(approxOffset);
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      final key = _messageKeys[msg.uniqueId];
+      if (key != null && key.currentContext != null) {
+        Scrollable.ensureVisible(
+          key.currentContext!,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.5,
+        );
+        setState(() {
+          _highlightedMsgId = msg.uniqueId;
+        });
+
+        _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            setState(() {
+              _highlightedMsgId = null;
+            });
+          }
+        });
+      } else if (retryCount < 8) {
+        // If the key is null, retry the jump and scroll to let ListView build it
+        _performScrollAndHighlight(msg, targetOffset, retryCount + 1);
+      } else {
+        setState(() {
+          _highlightedMsgId = msg.uniqueId;
+        });
+        _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            setState(() {
+              _highlightedMsgId = null;
+            });
+          }
+        });
+      }
+    });
+  }
+
+  void _prevMatch() {
+    if (_currentMatchIndex > 0) {
+      _scrollToMatch(_currentMatchIndex - 1);
+    }
+  }
+
+  void _nextMatch() {
+    if (_currentMatchIndex < _matchIndices.length - 1) {
+      _scrollToMatch(_currentMatchIndex + 1);
+    }
   }
 
   bool _isSelf(ChatMessage msg) {
@@ -296,6 +439,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -419,7 +564,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   )
                 : ChatBackground(
                     child: ListView.builder(
+                      controller: _scrollCtrl,
                       reverse: true,
+                      cacheExtent: 1500.0,
                       padding: const EdgeInsets.only(top: 8, bottom: 8),
                       itemCount: _displayItems.length,
                       itemBuilder: (context, index) {
@@ -435,13 +582,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         final mediaPath = msg.mediaPath != null
                             ? _resolveMedia(msg)
                             : null;
+                        
+                        final key = _messageKeys.putIfAbsent(msg.uniqueId, () => GlobalKey());
+
                         return MessageBubble(
+                          key: key,
                           message: msg,
                           isSelf: isSelf,
                           mediaFullPath: mediaPath,
                           showSenderName: widget.chat.isGroup,
                           groupedAbove: _isGroupedWithPrevious(displayIndex),
                           groupedBelow: _isGroupedWithNext(displayIndex),
+                          highlighted: msg.uniqueId == _highlightedMsgId,
+                          searchQuery: _search,
                         );
                       },
                     ),
@@ -454,13 +607,33 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 8,
+                  vertical: 4,
                 ),
-                child: Text(
-                  '${_filtered.length} of ${_allMessages.length} messages',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      _matchIndices.isEmpty
+                          ? 'No matches'
+                          : '${_currentMatchIndex + 1} of ${_matchIndices.length}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                      onPressed: _currentMatchIndex > 0 ? _prevMatch : null,
+                      tooltip: 'Previous match',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      onPressed: _currentMatchIndex < _matchIndices.length - 1
+                          ? _nextMatch
+                          : null,
+                      tooltip: 'Next match',
+                    ),
+                  ],
                 ),
               ),
             )
