@@ -139,12 +139,14 @@ class ChatRepository extends ChangeNotifier {
     }
 
     if (chatTxtPath == null && txtCandidates.isNotEmpty) {
-      // Pick the .txt that looks like a real WhatsApp chat log (contains timestamp lines like [dd/mm/yy, ...)
+      // Pick the .txt that looks like a real WhatsApp chat log.
+      // iOS bracket format: [dd/mm/yy, ...]
+      // Android dash format: dd/mm/yy, time - sender: ...
       for (final f in txtCandidates) {
         try {
           // Read only the beginning to detect
           final preview = await f.openRead(0, 4096).transform(utf8.decoder).join();
-          if (RegExp(r'\[\d{1,2}/\d{1,2}/\d{2}').hasMatch(preview)) {
+          if (RegExp(r'\[?\d{1,2}/\d{1,2}/\d{2},?\s').hasMatch(preview)) {
             chatTxtPath = f.path;
             break;
           }
@@ -377,11 +379,11 @@ class ChatRepository extends ChangeNotifier {
 
     if (txtFiles.isEmpty) return null;
 
-    // Prefer one that contains actual chat timestamps
+    // Prefer one that contains actual chat timestamps (iOS bracket or Android dash format)
     for (final f in txtFiles) {
       try {
         final preview = f.readAsStringSync().substring(0, (4096).clamp(0, f.lengthSync()));
-        if (RegExp(r'\[\d{1,2}/\d{1,2}/\d{2}').hasMatch(preview)) {
+        if (RegExp(r'\[?\d{1,2}/\d{1,2}/\d{2},?\s').hasMatch(preview)) {
           return f.path;
         }
       } catch (_) {}

@@ -28,28 +28,63 @@ final _deletedMessageRe = RegExp(
   caseSensitive: false,
 );
 
-/// Helper to extract media filename if <attached: ...> is present in the line (anywhere).
+// Matches Android's "<Media omitted>" marker (media excluded from export).
+final _mediaOmittedRe = RegExp(
+  r'^\s*<Media omitted>\s*$',
+  caseSensitive: false,
+);
+
+// Synthetic placeholder used when media was omitted from the export.
+const _mediaOmittedPlaceholder = '__media_omitted__';
+
+/// Helper to extract media filename from attachment markers in a line.
+///
+/// Supports both formats:
+///   - iOS:     `<attached: FILENAME>`  (anywhere in the line)
+///   - Android: `FILENAME (file attached)` (filename before the marker)
+///   - Android: `<Media omitted>` (media excluded from export)
+///
 /// Returns the media name and the text with the tag removed (caption remains).
 ({String? media, String cleanedText}) _parseAttached(String lineText) {
   // Strip LRM (and any direction marks) that WhatsApp inserts before attachments in some exports.
   // This ensures pure media messages have truly empty .text so buildPreview shows "sent a photo" etc.
   lineText = lineText.replaceAll(_lrm, '');
+
+  // --- iOS format: <attached: FILENAME> ---
   final lower = lineText.toLowerCase();
   final startIdx = lower.indexOf('<attached:');
-  if (startIdx == -1) {
-    return (media: null, cleanedText: lineText.trim());
+  if (startIdx != -1) {
+    final contentStart = startIdx + '<attached:'.length;
+    final endIdx = lineText.indexOf('>', contentStart);
+    if (endIdx != -1) {
+      final media = lineText.substring(contentStart, endIdx).trim();
+      // remove from startIdx to endIdx+1
+      final before = lineText.substring(0, startIdx).trimRight();
+      final after = lineText.substring(endIdx + 1).trimLeft();
+      final cleaned =
+          [before, after].where((s) => s.isNotEmpty).join(' ').trim();
+      return (media: media, cleanedText: cleaned);
+    }
   }
-  final contentStart = startIdx + '<attached:'.length;
-  final endIdx = lineText.indexOf('>', contentStart);
-  if (endIdx == -1) {
-    return (media: null, cleanedText: lineText.trim());
+
+  // --- Android format: FILENAME (file attached) ---
+  // The filename precedes the "(file attached)" marker.
+  // There may be caption text on subsequent continuation lines but NOT on the same line.
+  final fileAttachedMatch = RegExp(
+    r'^(.+?)\s+\(file attached\)\s*$',
+    caseSensitive: false,
+  ).firstMatch(lineText.trim());
+  if (fileAttachedMatch != null) {
+    final media = fileAttachedMatch.group(1)!.trim();
+    return (media: media, cleanedText: '');
   }
-  final media = lineText.substring(contentStart, endIdx).trim();
-  // remove from startIdx to endIdx+1
-  final before = lineText.substring(0, startIdx).trimRight();
-  final after = lineText.substring(endIdx + 1).trimLeft();
-  final cleaned = [before, after].where((s) => s.isNotEmpty).join(' ').trim();
-  return (media: media, cleanedText: cleaned);
+
+  // --- Android: <Media omitted> (media excluded from export) ---
+  if (_mediaOmittedRe.hasMatch(lineText)) {
+    return (media: _mediaOmittedPlaceholder, cleanedText: '');
+  }
+
+  return (media: null, cleanedText: lineText.trim());
 }
 
 /// Removes WhatsApp's "This message was edited" marker from the text and returns whether it was edited.
@@ -144,7 +179,12 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
       MessageType type = MessageType.text;
       String finalText = attachedInfo.cleanedText;
 
-      if (media != null) {
+      if (media == _mediaOmittedPlaceholder) {
+        // Media was excluded from the Android export — show as system-like text
+        media = null;
+        type = MessageType.system;
+        finalText = 'Media omitted';
+      } else if (media != null) {
         type = getMediaTypeFromFilename(media);
       } else {
         final potentialMedia = finalText.trim();
@@ -196,25 +236,41 @@ List<ChatMessage> parseChat(String rawContent, {List<String> myAliases = const [
       if (cont.isNotEmpty) {
         final attachedInfo = _parseAttached(cont);
         if (attachedInfo.media != null) {
-          // Media tag found inside a continuation line
-          final newMedia = attachedInfo.media!;
-          final newType = getMediaTypeFromFilename(newMedia);
-          // keep any caption text from the cont (tag already stripped by helper)
-          final cleanedCont = attachedInfo.cleanedText;
+          if (attachedInfo.media == _mediaOmittedPlaceholder) {
+            // Media omitted on a continuation line — append as text
+            final combined = current.text.isEmpty
+                ? 'Media omitted'
+                : '${current.text}\nMedia omitted';
+            final stripped = _stripEditedMarker(combined);
+            current = ChatMessage(
+              timestamp: current.timestamp,
+              sender: current.sender,
+              text: stripped.text,
+              mediaPath: current.mediaPath,
+              type: current.type,
+              isEdited: stripped.isEdited || current.isEdited,
+            );
+          } else {
+            // Media tag found inside a continuation line
+            final newMedia = attachedInfo.media!;
+            final newType = getMediaTypeFromFilename(newMedia);
+            // keep any caption text from the cont (tag already stripped by helper)
+            final cleanedCont = attachedInfo.cleanedText;
 
-          final combined = current.text.isNotEmpty && cleanedCont.isNotEmpty
-              ? '${current.text}\n$cleanedCont'
-              : (cleanedCont.isNotEmpty ? cleanedCont : current.text);
-          final stripped = _stripEditedMarker(combined);
+            final combined = current.text.isNotEmpty && cleanedCont.isNotEmpty
+                ? '${current.text}\n$cleanedCont'
+                : (cleanedCont.isNotEmpty ? cleanedCont : current.text);
+            final stripped = _stripEditedMarker(combined);
 
-          current = ChatMessage(
-            timestamp: current.timestamp,
-            sender: current.sender,
-            text: stripped.text,
-            mediaPath: newMedia,
-            type: newType,
-            isEdited: stripped.isEdited || current.isEdited,
-          );
+            current = ChatMessage(
+              timestamp: current.timestamp,
+              sender: current.sender,
+              text: stripped.text,
+              mediaPath: newMedia,
+              type: newType,
+              isEdited: stripped.isEdited || current.isEdited,
+            );
+          }
         } else {
           // Regular text continuation, or Android direct media filename on next line
           final potential = cont.trim();
