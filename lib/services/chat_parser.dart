@@ -3,20 +3,20 @@ import '../models/chat.dart';
 final _lrm = '\u200E';
 
 final _timestampRe = RegExp(
-  r'^\u200E?\s*\[(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\]?\s*([^:]+):\s*(.*)$',
+  r'^\u200E?[\s\u202f\u00a0]*\[(\d{1,2}/\d{1,2}/\d{2,4}),[\s\u202f\u00a0]*(\d{1,2}:\d{2}(?::\d{2})?(?:[\s\u202f\u00a0]*[AP]M)?)\]?[\s\u202f\u00a0]*([^:]+):[\s\u202f\u00a0]*(.*)$',
   caseSensitive: false,
 );
 
 // Fallback regex for Android exports that may have slight variations (no space after ], different spacing, etc.)
 final _timestampReFallback = RegExp(
-  r'^\u200E?\s*\[(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\]?\s*([^:]+):\s*(.*)$',
+  r'^\u200E?[\s\u202f\u00a0]*\[(\d{1,2}/\d{1,2}/\d{2,4}),[\s\u202f\u00a0]*(\d{1,2}:\d{2}(?::\d{2})?(?:[\s\u202f\u00a0]*[AP]M)?)\]?[\s\u202f\u00a0]*([^:]+):[\s\u202f\u00a0]*(.*)$',
   caseSensitive: false,
 );
 
 // Android "dash" format without brackets: DD/MM/YY, h:mm pm - [Sender: ] text
 // Supports system lines without sender (e.g. "date, time - You were added")
 final _timestampReDash = RegExp(
-  r'^(\d{1,2}/\d{1,2}/\d{2}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*[ap]m?)\s*-\s*(?:(.+?):\s*)?(.*)$',
+  r'^(\d{1,2}/\d{1,2}/\d{2,4}),[\s\u202f\u00a0]*(\d{1,2}:\d{2}(?::\d{2})?[\s\u202f\u00a0]*[ap]m?)[\s\u202f\u00a0]*-[\s\u202f\u00a0]*(?:(.+?):[\s\u202f\u00a0]*)?(.*)$',
   caseSensitive: false,
 );
 
@@ -146,10 +146,13 @@ List<ChatMessage> parseChat(
       // with or without seconds, and DD/MM or MM/DD date order.
       DateTime ts = DateTime.now();
       try {
-        final dateParts = datePart.split('/');
+        final dateParts = datePart.split(RegExp(r'[\/\-\.]'));
         int d = int.parse(dateParts[0]);
         int m = int.parse(dateParts[1]);
-        int y = 2000 + int.parse(dateParts[2]);
+        int y = int.parse(dateParts[2]);
+        if (y < 100) {
+          y += 2000;
+        }
 
         // Handle possible MM/DD/YY (swap if month > 12)
         if (m > 12 && d <= 12) {
@@ -198,14 +201,15 @@ List<ChatMessage> parseChat(
         type = getMediaTypeFromFilename(media);
       } else {
         final potentialMedia = finalText.trim();
-        // Android WhatsApp export often references media directly as the "text" part
-        // e.g. "IMG-20250616-WA0001.jpg" instead of "<attached: IMG-...>"
-        // Also catches other filename-only media lines
-        // Must NOT contain spaces (real filenames from WA exports don't have spaces;
-        // sentences like "You deleted this message." would otherwise match).
+        final parts = potentialMedia.split('.');
+        final ext = parts.length > 1 ? parts.last : '';
+        final hasValidExt = ext.length >= 2 &&
+            ext.length <= 5 &&
+            RegExp(r'^[a-zA-Z0-9]+$').hasMatch(ext);
+
         if (!potentialMedia.contains(' ') &&
             potentialMedia.contains('.') &&
-            potentialMedia.split('.').last.length <= 5 && // plausible extension
+            hasValidExt &&
             potentialMedia.length > 4 &&
             potentialMedia.length < 120) {
           // Android style: the line content is just the media filename (no <attached: tag)

@@ -479,22 +479,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final current = identity.getSelfForChat(widget.chat.id);
     final chatSenders = widget.chat.participants;
 
-    // Only allow choosing from the configured allowed usernames that appear in this chat
+    // Allow choosing from all senders in this chat
     List<String> candidates = chatSenders;
-    final allowed = identity.myUsernames
-        .where(
-          (u) => chatSenders.any((p) => p.toLowerCase() == u.toLowerCase()),
-        )
-        .toList();
-    if (allowed.isNotEmpty) {
-      candidates = allowed;
-    }
-
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No matching usernames from your config. Manage usernames in the list screen.',
+            'No participants found in this chat.',
           ),
         ),
       );

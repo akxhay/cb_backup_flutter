@@ -205,17 +205,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       return; // no prompt needed
     }
 
-    // Only allow choosing from configured (allowed) usernames if any match in this chat
+    // Allow choosing from all participants in this chat
     List<String> chooserCandidates = chat.participants;
-    final allowed = identity.myUsernames
-        .where(
-          (u) =>
-              chat.participants.any((p) => p.toLowerCase() == u.toLowerCase()),
-        )
-        .toList();
-    if (allowed.isNotEmpty) {
-      chooserCandidates = allowed;
-    }
 
     // Show chooser dialog with smart default pre-selection
     final defaultSelection = identity.suggestDefaultSelf(

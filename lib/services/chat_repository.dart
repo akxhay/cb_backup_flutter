@@ -7,6 +7,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
 
 import '../models/chat.dart';
 import 'chat_parser.dart';
@@ -39,19 +41,23 @@ class ChatRepository extends ChangeNotifier {
   Future<void> load() async {
     _chats.clear();
     final metaFile = await _getMetaFile();
-    if (!await metaFile.exists()) return;
-
-    try {
-      final content = await metaFile.readAsString();
-      final list = (jsonDecode(content) as List).cast<Map<String, dynamic>>();
-      _chats.addAll(list.map(Chat.fromJson));
-      notifyListeners();
-    } catch (e) {
-      // ignore corrupt meta for MVP
-      debugPrint('Failed to load chats meta: $e');
-      // Try to delete corrupt file so next import can start fresh
-      try { await metaFile.delete(); } catch (_) {}
+    if (await metaFile.exists()) {
+      try {
+        final content = await metaFile.readAsString();
+        final list = (jsonDecode(content) as List).cast<Map<String, dynamic>>();
+        _chats.addAll(list.map(Chat.fromJson));
+      } catch (e) {
+        // ignore corrupt meta for MVP
+        debugPrint('Failed to load chats meta: $e');
+        // Try to delete corrupt file so next import can start fresh
+        try { await metaFile.delete(); } catch (_) {}
+      }
     }
+
+    // Migrate chats from legacy native Android app if they exist
+    await _migrateFromAndroidLegacy();
+
+    notifyListeners();
   }
 
   Future<void> _persist() async {
@@ -343,9 +349,64 @@ class ChatRepository extends ChangeNotifier {
     try {
       final content = await messagesFile.readAsString();
       final data = jsonDecode(content) as List;
-      return data
-          .map((j) => ChatMessage.fromJson((j as Map).cast<String, dynamic>()))
-          .toList();
+      final List<ChatMessage> msgs = [];
+      bool dirty = false;
+
+      for (final j in data) {
+        final msg = ChatMessage.fromJson((j as Map).cast<String, dynamic>());
+        // Self-healing / sanitation logic for old invalid document classifications (e.g. "Bta...?")
+        if (msg.type == MessageType.document && msg.mediaPath != null) {
+          final ext = msg.mediaPath!.split('.').last;
+          final hasValidExt = ext.length >= 2 &&
+              ext.length <= 5 &&
+              RegExp(r'^[a-zA-Z0-9]+$').hasMatch(ext);
+          if (!hasValidExt) {
+            msgs.add(ChatMessage(
+              timestamp: msg.timestamp,
+              sender: msg.sender,
+              text: msg.mediaPath!, // restore the filename as the message text!
+              type: MessageType.text,
+              mediaPath: null,
+              isEdited: msg.isEdited,
+            ));
+            dirty = true;
+            continue;
+          }
+        }
+        msgs.add(msg);
+      }
+
+      if (dirty) {
+        // Re-save healed messages to disk
+        try {
+          await _writeFileAtomically(messagesFile, jsonEncode(msgs.map((m) => m.toJson()).toList()));
+        } catch (_) {}
+
+        // Replace the Chat object in memory and persist it to correct the home screen preview
+        final chatIdx = _chats.indexWhere((c) => c.id == chat.id);
+        if (chatIdx != -1) {
+          final oldChat = _chats[chatIdx];
+          String? newPreview;
+          if (msgs.isNotEmpty) {
+            final last = msgs.last;
+            newPreview = last.type == MessageType.text ? last.text : '[${last.type.name}]';
+          }
+          _chats[chatIdx] = Chat(
+            id: oldChat.id,
+            title: oldChat.title,
+            isGroup: oldChat.isGroup,
+            participants: oldChat.participants,
+            importDate: oldChat.importDate,
+            extractedDir: oldChat.extractedDir,
+            messageCount: msgs.length,
+            lastMessagePreview: newPreview,
+          );
+          await _persist();
+          notifyListeners();
+        }
+      }
+
+      return msgs;
     } catch (_) {
       // If json corrupt, fallback to txt
       final txtPath = _findChatLogFile(chat.extractedDir);
@@ -459,5 +520,199 @@ class ChatRepository extends ChangeNotifier {
 
     _mediaPathCache[cacheKey] = direct;
     return direct; // return original attempt so caller can show error
+  }
+
+  Future<void> _migrateFromAndroidLegacy() async {
+    // Only migrate on Android
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (prefs.getBool('android_migration_completed') ?? false) {
+          return; // Already migrated!
+        }
+
+        // Get default databases path
+        final dbFolder = await getDatabasesPath();
+        final dbFile = File(p.join(dbFolder, 'SQLiteDatabase.db'));
+        if (!await dbFile.exists()) {
+          return; // Legacy database doesn't exist
+        }
+
+        final db = await openDatabase(dbFile.path, readOnly: true);
+
+        // Fetch all contacts from SAVED_CONTACTS
+        final contacts = await db.rawQuery('SELECT * FROM SAVED_CONTACTS');
+        if (contacts.isEmpty) {
+          await db.close();
+          return;
+        }
+
+        final baseDir = await _getBaseDir();
+
+        for (final contact in contacts) {
+          final String chatName = (contact['CHAT_NAME'] as String? ?? '').trim();
+          if (chatName.isEmpty) continue;
+
+          // Check if this chat is already present in _chats
+          if (_chats.any((c) => c.title.toLowerCase().trim() == chatName.toLowerCase().trim())) {
+            continue;
+          }
+
+          final String groupFlag = contact['GROUP_FLAG'] as String? ?? 'N';
+          final bool isGroup = groupFlag == 'Y';
+
+          // Fetch all message records for this contact
+          final messagesRows = await db.rawQuery(
+            'SELECT * FROM CHAT_RECORD WHERE CHAT_NAME = ? ORDER BY ID ASC',
+            [chatName],
+          );
+
+          if (messagesRows.isEmpty) continue;
+
+          final List<ChatMessage> messages = [];
+          final String chatSlug = chatName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+          final int ts = DateTime.now().millisecondsSinceEpoch;
+          final chatDir = Directory(p.join(baseDir.path, 'migrated_${chatSlug}_$ts'));
+          await chatDir.create(recursive: true);
+
+          for (final row in messagesRows) {
+            final String whatsappName = (row['WHATSAPP_NAME'] as String? ?? '').trim();
+            final String chatText = row['CHAT_TEXT'] as String? ?? '';
+            final String timeStr = row['TIME'] as String? ?? '';
+            final String typeStr = (row['TYPE'] as String? ?? 'text').trim().toLowerCase();
+            final String absolutePath = row['PATH'] as String? ?? '';
+            final String filename = row['FILENAME'] as String? ?? '';
+
+            final bool isSystem = whatsappName == '##420##';
+            final String sender = isSystem ? 'System' : whatsappName;
+
+            MessageType type = MessageType.text;
+            if (isSystem) {
+              type = MessageType.system;
+            } else {
+              switch (typeStr) {
+                case 'image':
+                  type = MessageType.image;
+                  break;
+                case 'video':
+                  type = MessageType.video;
+                  break;
+                case 'audio':
+                  type = MessageType.audio;
+                  break;
+                case 'document':
+                  type = MessageType.document;
+                  break;
+                case 'system':
+                  type = MessageType.system;
+                  break;
+                default:
+                  type = MessageType.text;
+              }
+            }
+
+            // Parse timestamp string
+            DateTime timestamp = DateTime.now();
+            if (timeStr.isNotEmpty) {
+              try {
+                // Legacy date formats: "dd/MM/yyyy HH:mm:ss", "dd/MM/yy, h:mm aaa", etc.
+                final match = RegExp(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:,\s*|\s+)(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([a-zA-Z]{2}))?').firstMatch(timeStr.trim());
+                if (match != null) {
+                  int d = int.parse(match.group(1)!);
+                  int m = int.parse(match.group(2)!);
+                  int y = int.parse(match.group(3)!);
+                  if (y < 100) y += 2000;
+
+                  int h = int.parse(match.group(4)!);
+                  int min = int.parse(match.group(5)!);
+                  int s = match.group(6) != null ? int.parse(match.group(6)!) : 0;
+                  final ampm = match.group(7)?.toUpperCase();
+
+                  if (ampm == 'PM' && h < 12) h += 12;
+                  if (ampm == 'AM' && h == 12) h = 0;
+
+                  timestamp = DateTime(y, m, d, h, min, s);
+                } else {
+                  timestamp = DateTime.parse(timeStr);
+                }
+              } catch (_) {}
+            }
+
+            // Copy media file if it exists
+            String? mediaPath;
+            if (type != MessageType.text && type != MessageType.system && filename.isNotEmpty) {
+              File? mediaFile;
+              if (absolutePath.isNotEmpty) {
+                mediaFile = File(absolutePath);
+              }
+              if (mediaFile == null || !await mediaFile.exists()) {
+                // Fallback to legacy shared directory
+                final fallbackDir = '/storage/emulated/0/ChatBin/.backup/.$chatName/Media';
+                mediaFile = File(p.join(fallbackDir, filename));
+              }
+
+              if (await mediaFile.exists()) {
+                final destPath = p.join(chatDir.path, filename);
+                await mediaFile.copy(destPath);
+                mediaPath = filename;
+              } else {
+                mediaPath = filename; // fallback to filename
+              }
+            }
+
+            messages.add(ChatMessage(
+              timestamp: timestamp,
+              sender: sender,
+              text: chatText,
+              type: type,
+              mediaPath: mediaPath,
+            ));
+          }
+
+          if (messages.isEmpty) {
+            await chatDir.delete(recursive: true);
+            continue;
+          }
+
+          // Save messages.json inside chatDir
+          final messagesFile = File(p.join(chatDir.path, 'messages.json'));
+          await _writeFileAtomically(messagesFile, jsonEncode(messages.map((m) => m.toJson()).toList()));
+
+          // Derive metadata
+          final senders = messages
+              .map((m) => m.sender)
+              .where((s) => s != 'System')
+              .toSet()
+              .toList();
+
+          String? preview;
+          final last = messages.last;
+          if (last.type == MessageType.text) {
+            preview = last.text;
+          } else {
+            preview = '[${last.type.name}]';
+          }
+
+          final chat = Chat(
+            id: 'migrated_${chatSlug}_$ts',
+            title: chatName,
+            isGroup: isGroup,
+            participants: senders,
+            importDate: DateTime.now(),
+            extractedDir: chatDir.path,
+            messageCount: messages.length,
+            lastMessagePreview: preview,
+          );
+
+          _chats.insert(0, chat);
+        }
+
+        await db.close();
+        await _persist();
+        await prefs.setBool('android_migration_completed', true);
+      } catch (e) {
+        debugPrint('Legacy Android migration failed: $e');
+      }
+    }
   }
 }

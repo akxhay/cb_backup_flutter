@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
@@ -264,47 +266,6 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  List<TextSpan> _buildTextSpans(String text, String query, TextStyle defaultStyle) {
-    if (query.isEmpty) {
-      return [TextSpan(text: text, style: defaultStyle)];
-    }
-
-    final List<TextSpan> spans = [];
-    final lowerText = text.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-
-    int start = 0;
-    int indexOfQuery = lowerText.indexOf(lowerQuery, start);
-
-    while (indexOfQuery != -1) {
-      if (indexOfQuery > start) {
-        spans.add(TextSpan(
-          text: text.substring(start, indexOfQuery),
-          style: defaultStyle,
-        ));
-      }
-
-      spans.add(TextSpan(
-        text: text.substring(indexOfQuery, indexOfQuery + query.length),
-        style: defaultStyle.copyWith(
-          backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.85),
-          color: Colors.black87,
-        ),
-      ));
-
-      start = indexOfQuery + query.length;
-      indexOfQuery = lowerText.indexOf(lowerQuery, start);
-    }
-
-    if (start < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(start),
-        style: defaultStyle,
-      ));
-    }
-
-    return spans;
-  }
 
   Widget _buildTextContent(BuildContext context, Color textColor, Color timeColor) {
     final textStyle = TextStyle(color: textColor, height: 1.38, fontSize: 15.5);
@@ -314,16 +275,11 @@ class MessageBubble extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 2),
-          child: Text.rich(
-            TextSpan(
-              children: [
-                ..._buildTextSpans(message.text, searchQuery, textStyle),
-                WidgetSpan(
-                  alignment: PlaceholderAlignment.middle,
-                  child: SizedBox(width: spacerWidth, height: 10),
-                ),
-              ],
-            ),
+          child: LinkableText(
+            text: message.text,
+            searchQuery: searchQuery,
+            baseStyle: textStyle,
+            spacerWidth: spacerWidth,
           ),
         ),
         Positioned(
@@ -707,9 +663,11 @@ class MessageBubble extends StatelessWidget {
           ),
           if (message.text.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
-              message.text,
-              style: TextStyle(color: textColor, fontSize: 14.5),
+            LinkableText(
+              text: message.text,
+              searchQuery: searchQuery,
+              baseStyle: TextStyle(color: textColor, fontSize: 14.5),
+              spacerWidth: 0,
             ),
           ],
           const SizedBox(height: 4),
@@ -840,5 +798,154 @@ class BubbleClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant BubbleClipper oldClipper) {
     return oldClipper.isSelf != isSelf || oldClipper.hasTail != hasTail;
+  }
+}
+
+class LinkableText extends StatefulWidget {
+  final String text;
+  final String searchQuery;
+  final TextStyle baseStyle;
+  final double spacerWidth;
+
+  const LinkableText({
+    super.key,
+    required this.text,
+    required this.searchQuery,
+    required this.baseStyle,
+    required this.spacerWidth,
+  });
+
+  @override
+  State<LinkableText> createState() => _LinkableTextState();
+}
+
+class _LinkableTextState extends State<LinkableText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Clear previous recognizers before rebuild to prevent double-allocations
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+
+    final List<InlineSpan> spans = [];
+
+    // Match URLs starting with http:// or https://
+    final urlRegex = RegExp(
+      r'(https?:\/\/[^\s]+)',
+      caseSensitive: false,
+    );
+
+    final matches = urlRegex.allMatches(widget.text);
+    int lastMatchEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastMatchEnd) {
+        final plainText = widget.text.substring(lastMatchEnd, match.start);
+        spans.addAll(_buildHighlightSpans(plainText, widget.searchQuery, widget.baseStyle));
+      }
+
+      final urlText = widget.text.substring(match.start, match.end);
+
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () async {
+          final uri = Uri.tryParse(urlText);
+          if (uri != null) {
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Could not open link')),
+                );
+              }
+            }
+          }
+        };
+      _recognizers.add(recognizer);
+
+      final linkStyle = widget.baseStyle.copyWith(
+        color: const Color(0xFF53BDEB), // Elegant WhatsApp style link blue color
+        decoration: TextDecoration.underline,
+      );
+
+      final urlSpans = _buildHighlightSpans(urlText, widget.searchQuery, linkStyle);
+
+      spans.add(TextSpan(
+        recognizer: recognizer,
+        children: urlSpans,
+      ));
+
+      lastMatchEnd = match.end;
+    }
+
+    if (lastMatchEnd < widget.text.length) {
+      final plainText = widget.text.substring(lastMatchEnd);
+      spans.addAll(_buildHighlightSpans(plainText, widget.searchQuery, widget.baseStyle));
+    }
+
+    // Add trailing space for inline timestamp alignment if needed
+    if (widget.spacerWidth > 0) {
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: SizedBox(width: widget.spacerWidth, height: 10),
+      ));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+    );
+  }
+
+  List<TextSpan> _buildHighlightSpans(String text, String query, TextStyle baseStyle) {
+    if (query.isEmpty) {
+      return [TextSpan(text: text, style: baseStyle)];
+    }
+
+    final List<TextSpan> spans = [];
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+
+    int start = 0;
+    int indexOfQuery = lowerText.indexOf(lowerQuery, start);
+
+    while (indexOfQuery != -1) {
+      if (indexOfQuery > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, indexOfQuery),
+          style: baseStyle,
+        ));
+      }
+
+      spans.add(TextSpan(
+        text: text.substring(indexOfQuery, indexOfQuery + query.length),
+        style: baseStyle.copyWith(
+          backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.85),
+          color: Colors.black87,
+        ),
+      ));
+
+      start = indexOfQuery + query.length;
+      indexOfQuery = lowerText.indexOf(lowerQuery, start);
+    }
+
+    if (start < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(start),
+        style: baseStyle,
+      ));
+    }
+
+    return spans;
   }
 }
