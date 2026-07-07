@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 
 import 'chat_avatar.dart';
 
+class SelfChooserResult {
+  final String selectedName;
+  final bool addToConfig;
+
+  const SelfChooserResult({
+    required this.selectedName,
+    required this.addToConfig,
+  });
+}
+
 class SelfChooserDialog extends StatefulWidget {
   final List<String> candidates;
   final String? initialSelected;
@@ -18,6 +28,7 @@ class SelfChooserDialog extends StatefulWidget {
 
 class _SelfChooserDialogState extends State<SelfChooserDialog> {
   String? _selected;
+  bool _addToConfig = true;
 
   @override
   void initState() {
@@ -43,7 +54,7 @@ class _SelfChooserDialogState extends State<SelfChooserDialog> {
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+              maxHeight: MediaQuery.sizeOf(context).height * 0.35,
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -66,12 +77,51 @@ class _SelfChooserDialogState extends State<SelfChooserDialog> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: () => setState(() => _addToConfig = !_addToConfig),
+            child: Row(
+              children: [
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: Checkbox(
+                    value: _addToConfig,
+                    onChanged: (val) {
+                      setState(() {
+                        _addToConfig = val ?? true;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Add to my global usernames list',
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Skip for now')),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _selected),
+          onPressed: () {
+            if (_selected == null) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pop(
+                context,
+                SelfChooserResult(
+                  selectedName: _selected!,
+                  addToConfig: _addToConfig,
+                ),
+              );
+            }
+          },
           child: const Text('Confirm'),
         ),
       ],

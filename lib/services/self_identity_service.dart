@@ -36,7 +36,14 @@ class SelfIdentityService extends ChangeNotifier {
   Future<void> addMyUsername(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    if (!_myUsernames.any((a) => a.toLowerCase() == trimmed.toLowerCase())) {
+
+    String clean(String str) => str
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .toLowerCase()
+        .trim();
+    final cleaned = clean(trimmed);
+
+    if (!_myUsernames.any((a) => clean(a) == cleaned)) {
       _myUsernames.add(trimmed);
       await save();
       notifyListeners();
@@ -44,7 +51,12 @@ class SelfIdentityService extends ChangeNotifier {
   }
 
   Future<void> removeMyUsername(String name) async {
-    _myUsernames.removeWhere((a) => a.toLowerCase() == name.toLowerCase());
+    String clean(String str) => str
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .toLowerCase()
+        .trim();
+    final cleaned = clean(name);
+    _myUsernames.removeWhere((a) => clean(a) == cleaned);
     await save();
     notifyListeners();
   }
@@ -55,10 +67,12 @@ class SelfIdentityService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setSelfForChat(String chatId, String selfName) async {
+  Future<void> setSelfForChat(String chatId, String selfName, {bool addToConfig = true}) async {
     final trimmed = selfName.trim();
     if (trimmed.isEmpty) return;
-    await addMyUsername(trimmed); // Automatically add chosen name to usernames config
+    if (addToConfig) {
+      await addMyUsername(trimmed); // Automatically add chosen name to usernames config
+    }
     _chatSelfNames[chatId] = trimmed;
     await save();
     notifyListeners();
@@ -75,14 +89,19 @@ class SelfIdentityService extends ChangeNotifier {
   /// Returns true if the given sender is "me".
   /// If chatId is provided, prefers the per-chat override.
   bool isSelf(String sender, {String? chatId}) {
-    final s = sender.toLowerCase().trim();
+    String clean(String str) => str
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .toLowerCase()
+        .trim();
+
+    final s = clean(sender);
     if (chatId != null) {
       final perChat = _chatSelfNames[chatId];
-      if (perChat != null) {
-        return perChat.toLowerCase().trim() == s;
+      if (perChat != null && clean(perChat) == s) {
+        return true;
       }
     }
-    return _myUsernames.any((a) => a.toLowerCase().trim() == s);
+    return _myUsernames.any((a) => clean(a) == s);
   }
 
   /// Resolves the best "me" for this chat using:
@@ -92,11 +111,21 @@ class SelfIdentityService extends ChangeNotifier {
   String? resolveSelfForChat(List<String> senders, {String? chatTitle, String? chatId}) {
     if (senders.isEmpty) return null;
 
+    String clean(String str) => str
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .toLowerCase()
+        .trim();
+
     // 1. Per-chat override
     if (chatId != null) {
       final per = _chatSelfNames[chatId];
-      if (per != null && senders.any((s) => s.toLowerCase() == per.toLowerCase())) {
-        return per;
+      if (per != null) {
+        final cleanPer = clean(per);
+        final found = senders.firstWhere(
+          (s) => clean(s) == cleanPer,
+          orElse: () => '',
+        );
+        if (found.isNotEmpty) return found;
       }
     }
 
@@ -104,7 +133,8 @@ class SelfIdentityService extends ChangeNotifier {
     String? bestMatch;
     int bestIdx = 999999;
     for (final sender in senders) {
-      final idx = _myUsernames.indexWhere((u) => u.toLowerCase() == sender.toLowerCase());
+      final cleanSender = clean(sender);
+      final idx = _myUsernames.indexWhere((u) => clean(u) == cleanSender);
       if (idx != -1 && idx < bestIdx) {
         bestIdx = idx;
         bestMatch = sender;
@@ -114,10 +144,10 @@ class SelfIdentityService extends ChangeNotifier {
 
     // 3. 1:1 title-based default (filename usually names the other party)
     if (senders.length == 2 && chatTitle != null && chatTitle.trim().isNotEmpty) {
-      final lowerTitle = chatTitle.toLowerCase().trim();
+      final cleanTitle = clean(chatTitle);
       for (final s in senders) {
-        if (s.toLowerCase().trim() == lowerTitle) {
-          return senders.firstWhere((o) => o.toLowerCase().trim() != lowerTitle, orElse: () => senders[0]);
+        if (clean(s) == cleanTitle) {
+          return senders.firstWhere((o) => clean(o) != cleanTitle, orElse: () => senders[0]);
         }
       }
     }

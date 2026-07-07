@@ -25,10 +25,11 @@ class ChatRepository extends ChangeNotifier {
   Future<Directory> _getBaseDir() async {
     if (_baseDir != null) return _baseDir!;
     final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(docs.path, 'cbbackup', 'chats'));
+    var dir = Directory(p.join(docs.path, 'cbbackup', 'chats'));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
+    dir = Directory(dir.resolveSymbolicLinksSync());
     _baseDir = dir;
     return dir;
   }
@@ -45,7 +46,22 @@ class ChatRepository extends ChangeNotifier {
       try {
         final content = await metaFile.readAsString();
         final list = (jsonDecode(content) as List).cast<Map<String, dynamic>>();
-        _chats.addAll(list.map(Chat.fromJson));
+        final base = await _getBaseDir();
+        final healed = list.map(Chat.fromJson).map((c) {
+          final dirName = p.basename(c.extractedDir);
+          final updatedDir = p.join(base.path, dirName);
+          return Chat(
+            id: c.id,
+            title: c.title,
+            isGroup: c.isGroup,
+            participants: c.participants,
+            importDate: c.importDate,
+            extractedDir: updatedDir,
+            messageCount: c.messageCount,
+            lastMessagePreview: c.lastMessagePreview,
+          );
+        });
+        _chats.addAll(healed);
       } catch (e) {
         // ignore corrupt meta for MVP
         debugPrint('Failed to load chats meta: $e');
@@ -106,18 +122,7 @@ class ChatRepository extends ChangeNotifier {
     await chatDir.create(recursive: true);
 
     // Extract
-    final bytes = await zipFile.readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-    for (final file in archive) {
-      final outPath = p.join(chatDir.path, file.name);
-      if (file.isFile) {
-        final outFile = File(outPath);
-        await outFile.parent.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      } else {
-        await Directory(outPath).create(recursive: true);
-      }
-    }
+    await extractFileToDisk(zipFile.path, chatDir.path);
 
     // Locate the chat log .txt file.
     // - iOS usually: _chat.txt
@@ -210,21 +215,15 @@ class ChatRepository extends ChangeNotifier {
   /// Merge messages from a new zip into an existing chat (sorted by date, deduplicated).
   /// Copies any new media files into the target chat's directory.
   Future<void> mergeIntoChat(Chat target, File zipFile) async {
-    final temp = await Directory.systemTemp.createTemp('cbbackup_merge_');
+    final tempDir = await getTemporaryDirectory();
+    var temp = await tempDir.createTemp('cbbackup_merge_');
+    temp = Directory(temp.resolveSymbolicLinksSync());
+    
+    final base = await _getBaseDir();
+    final resolvedTargetDir = p.join(base.path, p.basename(target.extractedDir));
     try {
       // Extract new zip to temp
-      final bytes = await zipFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      for (final f in archive) {
-        final outPath = p.join(temp.path, f.name);
-        if (f.isFile) {
-          final outFile = File(outPath);
-          await outFile.parent.create(recursive: true);
-          await outFile.writeAsBytes(f.content as List<int>);
-        } else {
-          await Directory(outPath).create(recursive: true);
-        }
-      }
+      await extractFileToDisk(zipFile.path, temp.path);
 
       // Find chat log .txt in temp (Android may use different filename)
       String? txtPath;
@@ -293,7 +292,7 @@ class ChatRepository extends ChangeNotifier {
           final base = p.basename(entity.path);
           if (base.toLowerCase().endsWith('.txt')) continue;
           final rel = p.relative(entity.path, from: temp.path);
-          final destPath = p.join(target.extractedDir, rel);
+          final destPath = p.join(resolvedTargetDir, rel);
           final destFile = File(destPath);
           await destFile.parent.create(recursive: true);
           await entity.copy(destPath);
@@ -301,20 +300,23 @@ class ChatRepository extends ChangeNotifier {
       }
 
       // Overwrite messages.json with merged
-      final msgFile = File(p.join(target.extractedDir, 'messages.json'));
+      final msgFile = File(p.join(resolvedTargetDir, 'messages.json'));
       await _writeFileAtomically(msgFile, jsonEncode(merged.map((m) => m.toJson()).toList()));
 
       // Update the in-memory chat metadata
       final idx = _chats.indexWhere((c) => c.id == target.id);
       if (idx != -1) {
         final old = _chats[idx];
+        final senders = merged.map((m) => m.sender).toSet().toList();
+        senders.remove('System');
+
         final updated = Chat(
           id: old.id,
           title: old.title,
           isGroup: old.isGroup,
-          participants: old.participants,
+          participants: senders,
           importDate: DateTime.now(),
-          extractedDir: old.extractedDir,
+          extractedDir: resolvedTargetDir,
           messageCount: merged.length,
           lastMessagePreview: buildPreview(merged),
         );

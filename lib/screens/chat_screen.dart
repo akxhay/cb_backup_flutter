@@ -492,24 +492,31 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final selected = await showDialog<String>(
+    final result = await showDialog<SelfChooserResult>(
       context: context,
       builder: (ctx) =>
           SelfChooserDialog(candidates: candidates, initialSelected: current),
     );
 
-    if (selected != null && selected.isNotEmpty) {
-      await identity.setSelfForChat(
-        widget.chat.id,
-        selected,
-      ); // auto adds to config
-      setState(() {}); // refresh message alignments
-    } else if (selected == '') {
-      final custom = await _askCustomName(context);
-      if (custom != null && custom.trim().isNotEmpty) {
-        final name = custom.trim();
-        await identity.setSelfForChat(widget.chat.id, name); // auto adds
-        setState(() {});
+    if (result != null) {
+      if (result.selectedName.isNotEmpty) {
+        await identity.setSelfForChat(
+          widget.chat.id,
+          result.selectedName,
+          addToConfig: result.addToConfig,
+        );
+        setState(() {}); // refresh message alignments
+      } else if (result.selectedName == '') {
+        final custom = await _askCustomName(context);
+        if (custom != null && custom.trim().isNotEmpty) {
+          final name = custom.trim();
+          await identity.setSelfForChat(
+            widget.chat.id,
+            name,
+            addToConfig: result.addToConfig,
+          );
+          setState(() {});
+        }
       }
     }
   }

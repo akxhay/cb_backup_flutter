@@ -128,7 +128,9 @@ List<ChatMessage> parseChat(
     if (match != null) {
       final datePart = match.group(1)!;
       final timePart = match.group(2)!;
-      String sender = (match.group(3) ?? '').trim();
+      String sender = (match.group(3) ?? '')
+          .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+          .trim();
       String text = (match.group(4) ?? '').replaceAll(_lrm, '');
 
       // For dash format without sender (system lines like "date, time - You were added")
