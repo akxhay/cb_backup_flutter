@@ -223,7 +223,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
 
     if (result != null) {
-      if (result.selectedName.isNotEmpty) {
+      if (result.selectedName == '_global_') {
+        await identity.clearSelfForChat(chat.id);
+      } else if (result.selectedName.isNotEmpty) {
         await identity.setSelfForChat(
           chat.id,
           result.selectedName,

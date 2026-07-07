@@ -33,7 +33,7 @@ class _SelfChooserDialogState extends State<SelfChooserDialog> {
   @override
   void initState() {
     super.initState();
-    _selected = widget.initialSelected;
+    _selected = widget.initialSelected ?? '_global_';
   }
 
   @override
@@ -60,6 +60,13 @@ class _SelfChooserDialogState extends State<SelfChooserDialog> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _IdentityOption(
+                    name: 'Global (Match all my usernames)',
+                    value: '_global_',
+                    groupValue: _selected,
+                    isGlobal: true,
+                    onTap: () => setState(() => _selected = '_global_'),
+                  ),
                   ...widget.candidates.map((name) => _IdentityOption(
                         name: name,
                         value: name,
@@ -77,33 +84,36 @@ class _SelfChooserDialogState extends State<SelfChooserDialog> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          InkWell(
-            onTap: () => setState(() => _addToConfig = !_addToConfig),
-            child: Row(
-              children: [
-                SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: Checkbox(
-                    value: _addToConfig,
-                    onChanged: (val) {
-                      setState(() {
-                        _addToConfig = val ?? true;
-                      });
-                    },
-                  ),
+          if (_selected != '_global_' && _selected != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: InkWell(
+                onTap: () => setState(() => _addToConfig = !_addToConfig),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: Checkbox(
+                        value: _addToConfig,
+                        onChanged: (val) {
+                          setState(() {
+                            _addToConfig = val ?? true;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Add to my global usernames list',
+                        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Add to my global usernames list',
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
         ],
       ),
       actions: [
@@ -134,6 +144,7 @@ class _IdentityOption extends StatelessWidget {
   final String value;
   final String? groupValue;
   final bool isCustom;
+  final bool isGlobal;
   final VoidCallback onTap;
 
   const _IdentityOption({
@@ -142,6 +153,7 @@ class _IdentityOption extends StatelessWidget {
     required this.groupValue,
     required this.onTap,
     this.isCustom = false,
+    this.isGlobal = false,
   });
 
   bool get isSelected => groupValue == value;
@@ -167,6 +179,12 @@ class _IdentityOption extends StatelessWidget {
                     radius: 18,
                     backgroundColor: cs.surfaceContainerHighest,
                     child: Icon(Icons.edit_outlined, size: 18, color: cs.onSurfaceVariant),
+                  )
+                else if (isGlobal)
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: cs.surfaceContainerHighest,
+                    child: Icon(Icons.public, size: 18, color: cs.onSurfaceVariant),
                   )
                 else
                   ChatAvatar(name: name, radius: 18),

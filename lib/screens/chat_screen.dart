@@ -499,7 +499,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (result != null) {
-      if (result.selectedName.isNotEmpty) {
+      if (result.selectedName == '_global_') {
+        await identity.clearSelfForChat(widget.chat.id);
+        setState(() {}); // refresh message alignments
+      } else if (result.selectedName.isNotEmpty) {
         await identity.setSelfForChat(
           widget.chat.id,
           result.selectedName,

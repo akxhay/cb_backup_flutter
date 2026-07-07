@@ -97,8 +97,8 @@ class SelfIdentityService extends ChangeNotifier {
     final s = clean(sender);
     if (chatId != null) {
       final perChat = _chatSelfNames[chatId];
-      if (perChat != null && clean(perChat) == s) {
-        return true;
+      if (perChat != null) {
+        return clean(perChat) == s;
       }
     }
     return _myUsernames.any((a) => clean(a) == s);
