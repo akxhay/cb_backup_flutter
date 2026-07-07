@@ -717,4 +717,39 @@ class ChatRepository extends ChangeNotifier {
       }
     }
   }
+
+  Future<Map<String, ChatStorageInfo>> getChatStorageBreakdown() async {
+    final Map<String, ChatStorageInfo> breakdown = {};
+    for (final chat in _chats) {
+      int msgSize = 0;
+      int mediaSize = 0;
+      final dir = Directory(chat.extractedDir);
+      if (await dir.exists()) {
+        try {
+          await for (final entity in dir.list(recursive: true, followLinks: false)) {
+            if (entity is File) {
+              final len = await entity.length();
+              final base = p.basename(entity.path).toLowerCase();
+              if (base == 'messages.json' || base.endsWith('.txt')) {
+                msgSize += len;
+              } else {
+                mediaSize += len;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+      breakdown[chat.id] = ChatStorageInfo(messageSize: msgSize, mediaSize: mediaSize);
+    }
+    return breakdown;
+  }
+}
+
+class ChatStorageInfo {
+  final int messageSize;
+  final int mediaSize;
+
+  int get totalSize => messageSize + mediaSize;
+
+  const ChatStorageInfo({required this.messageSize, required this.mediaSize});
 }

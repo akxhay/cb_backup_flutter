@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/theme_service.dart';
 import 'my_usernames_screen.dart';
+import 'storage_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -145,6 +146,19 @@ class SettingsScreen extends StatelessWidget {
             subtitle: Text('Current theme: ${_getThemeLabel(themeService.themeMode)}'),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () => _showThemeDialog(context, themeService),
+          ),
+
+          // Storage Info
+          ListTile(
+            leading: const Icon(Icons.storage_rounded, color: Color(0xFF00A884)),
+            title: const Text('Storage', style: TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: const Text('See how much storage is occupied by each chat'),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StorageScreen()),
+              );
+            },
           ),
 
           // Help / About
