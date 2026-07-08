@@ -275,7 +275,12 @@ class _StorageScreenState extends State<StorageScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Messages: ${_formatBytes(msgSize)} · Media: ${_formatBytes(mediaSize)}',
+                                        'Messages: ${_formatBytes(msgSize)}',
+                                        style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Media: ${_formatBytes(mediaSize)}',
                                         style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                                       ),
                                     ],
