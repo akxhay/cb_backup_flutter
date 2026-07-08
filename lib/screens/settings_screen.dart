@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/theme_service.dart';
 import 'my_usernames_screen.dart';
@@ -167,12 +168,18 @@ class SettingsScreen extends StatelessWidget {
             title: const Text('Help', style: TextStyle(fontWeight: FontWeight.w500)),
             subtitle: const Text('Version details, contact support, licenses'),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-            onTap: () {
-              showAboutDialog(
+            onTap: () async {
+              String versionStr = 'Version $_appVersion';
+              try {
+                final packageInfo = await PackageInfo.fromPlatform();
+                versionStr = 'Version ${packageInfo.version}+${packageInfo.buildNumber}';
+              } catch (_) {}
 
+              if (!context.mounted) return;
+              showAboutDialog(
                 context: context,
                 applicationName: 'CB Backup',
-                applicationVersion: 'Version $_appVersion',
+                applicationVersion: versionStr,
                 applicationIcon: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: CircleAvatar(
