@@ -18,7 +18,6 @@ class SettingsScreen extends StatelessWidget {
       case ThemeMode.dark:
         return 'Dark';
       case ThemeMode.system:
-      default:
         return 'System default';
     }
   }
@@ -83,55 +82,65 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CB Backup', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Settings',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
       body: ListView(
         children: [
-          // Profile block
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 34,
-                  backgroundColor: const Color(0xFF00A884).withValues(alpha: 0.15),
-                  child: const Icon(Icons.person, size: 40, color: Color(0xFF00A884)),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'WhatsApp Backup Viewer',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Offline Local Database Archiver',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          
+          // // Profile block
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          //   child: Row(
+          //     children: [
+          //       CircleAvatar(
+          //         radius: 34,
+          //         backgroundColor: const Color(0xFF00A884).withValues(alpha: 0.15),
+          //         child: const Icon(Icons.person, size: 40, color: Color(0xFF00A884)),
+          //       ),
+          //       const SizedBox(width: 16),
+          //       Expanded(
+          //         child: Column(
+          //           crossAxisAlignment: CrossAxisAlignment.start,
+          //           children: [
+          //             const Text(
+          //               'WhatsApp Backup Viewer',
+          //               style: TextStyle(
+          //                 fontSize: 18,
+          //                 fontWeight: FontWeight.bold,
+          //               ),
+          //             ),
+          //             const SizedBox(height: 4),
+          //             Text(
+          //               'Offline Local Database Archiver',
+          //               style: TextStyle(
+          //                 fontSize: 13,
+          //                 color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+          //               ),
+          //             ),
+          //           ],
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
+          // const Divider(height: 1),
           const SizedBox(height: 8),
 
           // Usernames
           ListTile(
-            leading: const Icon(Icons.person_outline_rounded, color: Color(0xFF00A884)),
-            title: const Text('Usernames', style: TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: const Text('Manage your aliases for "me" identity detection'),
+            leading: const Icon(
+              Icons.person_outline_rounded,
+              color: Color(0xFF00A884),
+            ),
+            title: const Text(
+              'Usernames',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: const Text(
+              'Manage your aliases for "me" identity detection',
+            ),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () {
               Navigator.of(context).push(
@@ -142,37 +151,60 @@ class SettingsScreen extends StatelessWidget {
 
           // Theme / Appearance
           ListTile(
-            leading: const Icon(Icons.palette_outlined, color: Color(0xFF00A884)),
-            title: const Text('Theme', style: TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: Text('Current theme: ${_getThemeLabel(themeService.themeMode)}'),
+            leading: const Icon(
+              Icons.palette_outlined,
+              color: Color(0xFF00A884),
+            ),
+            title: const Text(
+              'Theme',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Text(
+              'Current theme: ${_getThemeLabel(themeService.themeMode)}',
+            ),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () => _showThemeDialog(context, themeService),
           ),
 
           // Storage Info
           ListTile(
-            leading: const Icon(Icons.storage_rounded, color: Color(0xFF00A884)),
-            title: const Text('Storage', style: TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: const Text('See how much storage is occupied by each chat'),
+            leading: const Icon(
+              Icons.storage_rounded,
+              color: Color(0xFF00A884),
+            ),
+            title: const Text(
+              'Storage',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: const Text(
+              'See how much storage is occupied by each chat',
+            ),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const StorageScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const StorageScreen()));
             },
           ),
 
           // Help / About
           ListTile(
-            leading: const Icon(Icons.help_outline_rounded, color: Color(0xFF00A884)),
-            title: const Text('Help', style: TextStyle(fontWeight: FontWeight.w500)),
+            leading: const Icon(
+              Icons.help_outline_rounded,
+              color: Color(0xFF00A884),
+            ),
+            title: const Text(
+              'Help',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
             subtitle: const Text('Version details, contact support, licenses'),
             trailing: const Icon(Icons.chevron_right_rounded, size: 20),
             onTap: () async {
               String versionStr = 'Version $_appVersion';
               try {
                 final packageInfo = await PackageInfo.fromPlatform();
-                versionStr = 'Version ${packageInfo.version}+${packageInfo.buildNumber}';
+                versionStr =
+                    'Version ${packageInfo.version}+${packageInfo.buildNumber}';
               } catch (_) {}
 
               if (!context.mounted) return;
@@ -183,12 +215,16 @@ class SettingsScreen extends StatelessWidget {
                 applicationIcon: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: CircleAvatar(
-                    backgroundColor: const Color(0xFF00A884).withValues(alpha: 0.15),
+                    backgroundColor: const Color(
+                      0xFF00A884,
+                    ).withValues(alpha: 0.15),
                     child: const Icon(Icons.person, color: Color(0xFF00A884)),
                   ),
                 ),
                 children: const [
-                  Text('Offline local database and media archive viewer for WhatsApp exports.'),
+                  Text(
+                    'Offline local database and media archive viewer for WhatsApp exports.',
+                  ),
                 ],
               );
             },
