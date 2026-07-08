@@ -7,10 +7,13 @@ import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:intl/intl.dart';
 
+import 'package:facebook_audience_network/facebook_audience_network.dart';
+
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
+import '../services/ad_service.dart';
 import '../widgets/chat_avatar.dart';
 import '../widgets/chat_search_bar.dart';
 import '../widgets/self_chooser_dialog.dart';
@@ -640,12 +643,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                             _ChatListTile(
                                               chat: chat,
                                               dateLabel: _formatDate(chat.importDate),
-                                              onTap: () {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (_) => ChatScreen(chat: chat),
-                                                  ),
-                                                );
+                                              onTap: () async {
+                                                await AdService.showInterstitialAd();
+                                                if (context.mounted) {
+                                                  Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) => ChatScreen(chat: chat),
+                                                    ),
+                                                  );
+                                                }
                                               },
                                               onDelete: () => _deleteChat(chat),
                                             ),
@@ -681,18 +687,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                             _GlobalMessageMatchTile(
                                               match: match,
                                               searchQuery: _searchQuery,
-                                              onTap: () {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (_) => ChatScreen(
-                                                      chat: match.chat,
-                                                      initialMessageUniqueId:
-                                                          match.message.uniqueId,
-                                                      initialSearchQuery:
-                                                          _searchQuery,
+                                              onTap: () async {
+                                                await AdService.showInterstitialAd();
+                                                if (context.mounted) {
+                                                  Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) => ChatScreen(
+                                                        chat: match.chat,
+                                                        initialMessageUniqueId:
+                                                            match.message.uniqueId,
+                                                        initialSearchQuery:
+                                                            _searchQuery,
+                                                      ),
                                                     ),
-                                                  ),
-                                                );
+                                                  );
+                                                }
                                               },
                                             ),
                                             if (index < _messageSearchResults.length - 1)
@@ -727,12 +736,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             return _ChatListTile(
                               chat: chat,
                               dateLabel: _formatDate(chat.importDate),
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatScreen(chat: chat),
-                                  ),
-                                );
+                               onTap: () async {
+                                await AdService.showInterstitialAd();
+                                if (context.mounted) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(chat: chat),
+                                    ),
+                                  );
+                                }
                               },
                               onDelete: () => _deleteChat(chat),
                             );
@@ -755,6 +767,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
               label: const Text('Import'),
             )
           : null,
+      bottomNavigationBar: Container(
+        height: 60,
+        alignment: Alignment.center,
+        color: cs.surface,
+        child: FacebookBannerAd(
+          placementId: AdService.bannerPlacementId,
+          bannerSize: BannerSize.STANDARD,
+          listener: (result, value) {
+            debugPrint("Banner Ad: $result -> $value");
+          },
+        ),
+      ),
     );
   }
 

@@ -1,4 +1,8 @@
 PODS:
+  - facebook_audience_network (0.0.1):
+    - FBAudienceNetwork (~> 6.3)
+    - Flutter
+  - FBAudienceNetwork (6.21.1)
   - Flutter (1.0.0)
   - open_filex (0.0.2):
     - Flutter
@@ -6,11 +10,18 @@ PODS:
     - Flutter
 
 DEPENDENCIES:
+  - facebook_audience_network (from `.symlinks/plugins/facebook_audience_network/ios`)
   - Flutter (from `Flutter`)
   - open_filex (from `.symlinks/plugins/open_filex/ios`)
   - receive_sharing_intent (from `.symlinks/plugins/receive_sharing_intent/ios`)
 
+SPEC REPOS:
+  trunk:
+    - FBAudienceNetwork
+
 EXTERNAL SOURCES:
+  facebook_audience_network:
+    :path: ".symlinks/plugins/facebook_audience_network/ios"
   Flutter:
     :path: Flutter
   open_filex:
@@ -19,6 +30,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/receive_sharing_intent/ios"
 
 SPEC CHECKSUMS:
+  facebook_audience_network: ca776d93385735b6ed38720a7b38f72f74ed117b
+  FBAudienceNetwork: 85d18a65c9e35bc426bd4664cf3ae2a1172d7b60
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   open_filex: 432f3cd11432da3e39f47fcc0df2b1603854eff1
   receive_sharing_intent: 222384f00ffe7e952bbfabaa9e3967cb87e5fe00

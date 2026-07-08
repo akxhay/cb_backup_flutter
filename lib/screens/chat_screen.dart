@@ -6,11 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
+import 'package:facebook_audience_network/facebook_audience_network.dart';
+
 import '../models/chat.dart';
 import '../services/chat_parser.dart';
 import '../services/chat_repository.dart';
 import '../services/self_identity_service.dart';
 import '../services/video_thumbnail_service.dart';
+import '../services/ad_service.dart';
 import '../theme/chat_theme.dart';
 import '../widgets/chat_avatar.dart';
 import '../widgets/chat_background.dart';
@@ -778,6 +781,18 @@ class _ChatScreenState extends State<ChatScreen> {
           else
             _ArchiveFooter(messageCount: _allMessages.length),
         ],
+      ),
+      bottomNavigationBar: Container(
+        height: 60,
+        alignment: Alignment.center,
+        color: ChatTheme.chatBackground(context),
+        child: FacebookBannerAd(
+          placementId: AdService.bannerPlacementId,
+          bannerSize: BannerSize.STANDARD,
+          listener: (result, value) {
+            debugPrint("Banner Ad: $result -> $value");
+          },
+        ),
       ),
     );
   }

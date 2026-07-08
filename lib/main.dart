@@ -6,8 +6,12 @@ import 'services/chat_repository.dart';
 import 'services/self_identity_service.dart';
 import 'services/theme_service.dart';
 
+import 'services/ad_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await AdService.init();
 
   final identity = SelfIdentityService();
   await identity.load();

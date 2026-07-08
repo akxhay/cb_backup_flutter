@@ -1,0 +1,23 @@
+group 'com.dsi.facebook_audience_network'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.dsi.facebook_audience_network'
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 19
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+}
+
+dependencies {
+    implementation 'androidx.lifecycle:lifecycle-runtime:2.2.0'
+    implementation 'com.facebook.android:audience-network-sdk:6.16.0'
+    implementation 'androidx.annotation:annotation:1.1.0'
+}
